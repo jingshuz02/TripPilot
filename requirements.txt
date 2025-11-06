@@ -1,0 +1,25 @@
+# Core
+python-dotenv==1.0.0
+openai==2.7.1
+
+# Backend
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# Frontend
+streamlit==1.29.0
+
+# Agent Framework
+langchain==0.1.0
+langgraph==0.0.20
+langchain-openai==0.0.2
+
+# Database
+sqlalchemy==2.0.23
+
+# APIs & Tools
+requests==2.31.0
+googlemaps==4.10.0
+
+# Development
+pytest==7.4.3
