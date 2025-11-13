@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, current_app
 from flask_cors import CORS
 import sys
 import os
@@ -6,9 +6,12 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.config import Config
-
+from backend.maps.weather_api import WeatherAPI
+from backend.maps.gaode_maps import GaodeMapAPI
 app = Flask(__name__)
+app.json.ensure_ascii = False
 app.config.from_object(Config)
+
 CORS(app)
 
 # Initialize DeepSeek client
@@ -164,6 +167,138 @@ def internal_error(error):
         "status": "error"
     }), 500
 
+# --------实时天气---------
+# /api/weather/current?city=上海
+@app.route('/api/weather/current', methods=['GET'])
+def get_current_weather():
+    """
+    高德实时天气接口
+    参数: ?city=城市名称/行政区编码
+    返回: JSON
+    """
+    city = request.args.get("city", "").strip()
+    if not city:
+        return jsonify({"code": 400, "msg": "缺少 city 参数"}), 400
+
+    try:
+        api = WeatherAPI()
+        data = api.get_current_weather(city)
+        return jsonify({"code": 0, "data": data, "msg": "success"})
+    except ValueError as ve:          # 参数非法
+        current_app.logger.warning(f"天气参数错误: {ve}")
+        return jsonify({"code": 400, "msg": str(ve)}), 400
+    except RuntimeError as re:        # 高德返回业务异常
+        current_app.logger.error(f"高德天气异常: {re}")
+        return jsonify({"code": 500, "msg": str(re)}), 500
+    except Exception as e:            # 兜底
+        current_app.logger.exception("天气接口未知异常")
+        return jsonify({"code": 500, "msg": "internal error"}), 500
+
+# --------- 天气预报 ---------
+# /api/weather/forecast?city=上海&days=3
+@app.route('/api/weather/forecast', methods=['GET'])
+def get_forecast():
+    """
+    高德未来 4 天天气预报
+    参数:
+        city: 城市名称/行政区编码（必填）
+        days: 需要几天，默认 4，最大 4（可选）
+    """
+    city = request.args.get("city", "").strip()
+    if not city:
+        return jsonify({"code": 400, "msg": "缺少 city 参数"}), 400
+
+    try:
+        days = int(request.args.get("days", 4))
+        if not 1 <= days <= 4:
+            raise ValueError("days 只能取 1-4")
+    except ValueError as e:
+        return jsonify({"code": 400, "msg": f"days 参数非法: {e}"}), 400
+
+    try:
+        api = WeatherAPI()
+        data = api.get_forecast(city, days=days)
+        return jsonify({"code": 0, "data": data, "msg": "success"})
+    except ValueError as ve:
+        current_app.logger.warning(f"天气预报参数错误: {ve}")
+        return jsonify({"code": 400, "msg": str(ve)}), 400
+    except RuntimeError as re:
+        current_app.logger.error(f"高德预报异常: {re}")
+        return jsonify({"code": 500, "msg": str(re)}), 500
+    except Exception as e:
+        current_app.logger.exception("预报接口未知异常")
+        return jsonify({"code": 500, "msg": "internal error"}), 500
+
+
+# -------------------gaodemaps-----------------------
+gaode = GaodeMapAPI()
+# ------- 统一响应 -------
+def ok(data): return jsonify({"code": 0, "data": data})
+def fail(msg): return jsonify({"code": 1, "msg": str(msg)})
+
+# ------- 地图接口 -------
+# /api/map/search?city=北京&keyword=北京大学
+@app.route("/api/map/search", methods=["GET"])
+def search_place():
+    city = request.args.get("city")
+    keyword = request.args.get("keyword")
+    if not city or not keyword:
+        return fail("缺少 city / keyword")
+    try:
+        return ok(gaode.search_place(city, keyword))
+    except Exception as e:
+        return fail(e)
+
+# /api/map/route?origin=116.481,39.990&destination=116.434,39.908&mode=driving/walking(只支持这两种)
+@app.route("/api/map/route", methods=["GET"])
+def plan_route():
+    orig = request.args.get("origin")
+    dest = request.args.get("destination")
+    mode = request.args.get("mode", "driving")
+    if not orig or not dest:
+        return fail("缺少 origin / destination")
+    try:
+        return ok(gaode.plan_route(orig, dest, mode))
+    except Exception as e:
+        return fail(e)
+
+# /api/map/distance?origins=116.481,39.990|116.45,39.95&destination=116.434,39.908(&mode=driving)&batch=1
+# 加mode是沿路距离，不加是直线距离
+@app.route("/api/map/distance", methods=["GET"])
+def calc_distance():
+    origins = request.args.get("origins")
+    destination = request.args.get("destination")
+    batch = request.args.get("batch") == "1"
+    mode = request.args.get("mode")  # 新增
+    if not origins or not destination:
+        return fail("缺少 origins / destination")
+    try:
+        return ok(gaode.calculate_distance(origins, destination, mode, batch))
+    except Exception as e:
+        return fail(e)
+
+# /api/map/regeo?location=116.30539,39.99925
+@app.route("/api/map/regeo", methods=["GET"])
+def regeo():
+    location = request.args.get("location")
+    if not location:
+        return fail("缺少 location")
+    try:
+        return ok(gaode.regeo(location))
+    except Exception as e:
+        return fail(e)
+
+# /api/map/geo?address=北京大学
+@app.route("/api/map/geo", methods=["GET"])
+def geo():
+    address = request.args.get("address")
+    city = request.args.get("city")
+    if not address:
+        return fail("缺少 address")
+    try:
+        return ok(gaode.geo(address, city))
+    except Exception as e:
+        return fail(e)
 
 if __name__ == '__main__':
     # Check API key before starting
