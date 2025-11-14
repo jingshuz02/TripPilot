@@ -1,0 +1,8 @@
+POST http://localhost:5000/api/flights/search
+Content-Type: application/json
+
+{
+  "origin": "BKK",
+  "destination": "SYD",
+  "departure_date": "2025-12-10"
+}

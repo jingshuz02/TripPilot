@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sys
 import os
+from database.db_init import init_database, get_session
+from api_integrations.amadeus_api import AmadeusFlightService
+from database.operations import FlightOperations
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -163,6 +166,46 @@ def internal_error(error):
         "error": "Internal server error",
         "status": "error"
     }), 500
+
+
+engine = init_database()
+db_session = get_session(engine)
+amadeus_service = AmadeusFlightService(db_session)
+@app.route('/api/flights/search', methods=['POST'])
+def search_flights():
+    """搜索航班"""
+    try:
+        search_params = request.get_json()
+
+        # 验证必要参数
+        required_params = ['origin', 'destination', 'departure_date']
+        for param in required_params:
+            if not search_params.get(param):
+                return jsonify({"error": f"缺少必要参数: {param}"}), 400
+
+        db_session = get_session(engine)
+
+        try:
+            # 创建服务实例
+            flight_service = AmadeusFlightService(db_session)
+
+            # 调用服务处理
+            result = flight_service.search_and_save_flights(search_params)
+            if result['success']:
+                return jsonify(result), 200
+            else:
+                return jsonify(result), 500
+
+        finally:
+            db_session.close()
+
+    except Exception as e:
+        return jsonify({"error": f"服务器错误: {str(e)}"}), 500
+
+
+
+
+
 
 
 if __name__ == '__main__':
