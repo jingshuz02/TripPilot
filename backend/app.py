@@ -11,12 +11,23 @@ from backend.maps.gaode_maps import GaodeMapAPI
 app = Flask(__name__)
 app.json.ensure_ascii = False
 app.config.from_object(Config)
-
+from backend.agent.travel_agent import TravelAgent
 CORS(app)
 
 # Initialize DeepSeek client
 deepseek_client = Config.get_deepseek_client()
 
+agent = TravelAgent()
+@app.route('/api/agent/chat', methods=['POST'])
+def smart_chat():
+    """智能代理处理复杂查询"""
+    data = request.json
+    message = data.get('message')
+
+    # 让代理处理（自动调用需要的工具）
+    response = agent.process_message(message)
+
+    return jsonify({"message": response, "status": "success"})
 
 @app.route('/', methods=['GET'])
 def home():
