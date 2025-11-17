@@ -67,5 +67,21 @@ class APIConfig:
             print(f"🚨 获取令牌异常: {e}")
             return None
 
+    def validate_config(self) -> bool:
+        """验证API配置是否完整"""
+        return all([
+            self.amadeus_api_key,
+            self.amadeus_api_secret,
+            self.serper_api_key
+        ])
 
+    def test_serper_connection(self) -> bool:
+        """测试Serper API连接"""
+        try:
+            serper = SerperAPI()
+            test_result = serper.search("test", num_results=1)
+            return 'error' not in test_result
+        except Exception as e:
+            print(f"❌ Serper连接测试失败: {e}")
+            return False
 

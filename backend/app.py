@@ -3,8 +3,11 @@ from flask_cors import CORS
 import sys
 import os
 from database.db_init import init_database, get_session
-from api_integrations.amadeus_api import AmadeusFlightService
-from database.operations import FlightOperations
+from api_integrations.amadeus_api import AmadeusTravelService
+from database.operations import get_search_history, get_search_statistics
+from api_integrations.serper_api import search_with_intent
+from datetime import datetime
+
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -170,7 +173,7 @@ def internal_error(error):
 
 engine = init_database()
 db_session = get_session(engine)
-amadeus_service = AmadeusFlightService(db_session)
+amadeus_service = AmadeusTravelService(db_session)
 @app.route('/api/flights/search', methods=['POST'])
 def search_flights():
     """搜索航班"""
@@ -187,7 +190,7 @@ def search_flights():
 
         try:
             # 创建服务实例
-            flight_service = AmadeusFlightService(db_session)
+            flight_service = AmadeusTravelService(db_session)
 
             # 调用服务处理
             result = flight_service.search_and_save_flights(search_params)
@@ -202,9 +205,98 @@ def search_flights():
     except Exception as e:
         return jsonify({"error": f"服务器错误: {str(e)}"}), 500
 
+@app.route('/api/hotels/search', methods=['POST'])
+def search_hotels():
+    """搜索酒店"""
+    try:
+        search_params = request.get_json()
+
+        # 验证必要参数
+        required_params = ['latitude', 'longitude']
+        for param in required_params:
+            if not search_params.get(param):
+                return jsonify({"error": f"缺少必要参数: {param}"}), 400
+
+        # 调用服务处理
+        result = amadeus_service.search_and_save_hotels(search_params)
+
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+
+    except Exception as e:
+        return jsonify({"error": f"服务器错误: {str(e)}"}), 500
 
 
+@app.route('/api/search', methods=['POST'])
+def search_endpoint():
+    """
+    搜索接口
+    """
+    try:
+        data = request.get_json()
 
+        if not data or 'location' not in data:
+            return jsonify({
+                "success": False,
+                "error": "缺少必要参数: location"
+            }), 400
+
+        intent_type = data.get('intent_type', '通用')
+        location = data.get('location')
+
+        result = search_with_intent(
+            intent_type=intent_type,
+            location=location,
+            query=data.get('query'),
+            days=data.get('days'),
+            cuisine=data.get('cuisine'),
+            budget=data.get('budget'),
+            season=data.get('season'),
+            event_type=data.get('event_type'),
+            area=data.get('area'),
+            country=data.get('country')
+        )
+
+        response = {
+            "success": True,
+            "intent_type": intent_type,
+            "location": location,
+            "timestamp": datetime.now().isoformat(),
+            "data": result
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"❌ 搜索接口错误: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/search/history', methods=['GET'])
+def get_search_history_endpoint():
+    """
+    获取搜索历史记录
+    """
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        history = get_search_history(limit=limit)
+
+        return jsonify({
+            "success": True,
+            "data": history
+        })
+
+    except Exception as e:
+        print(f"❌ 获取搜索历史失败: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 

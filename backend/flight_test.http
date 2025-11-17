@@ -1,8 +1,26 @@
-POST http://localhost:5000/api/flights/search
+#POST http://localhost:5000/api/flights/search
+#Content-Type: application/json
+#
+#{
+#  "origin": "BKK",
+#  "destination": "SYD",
+#  "departure_date": "2025-12-10"
+#}
+
+
+POST http://localhost:5000/api/hotels/search
 Content-Type: application/json
 
 {
-  "origin": "BKK",
-  "destination": "SYD",
-  "departure_date": "2025-12-10"
+  "latitude": 41.397158,
+  "longitude": 2.160873,
+  "radius": 5,
+  "radiusUnit": "KM",
+  "ratings": "4,5",
+  "amenities": "SWIMMING_POOL,SPA",
+  "adults": 2,
+  "check_in_date": "2025-11-22",
+  "check_out_date": "2025-11-23",
+  "room_quantity": 1,
+  "best_rate_only": true
 }

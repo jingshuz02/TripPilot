@@ -1,8 +1,8 @@
-from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, String, Integer, Float, JSON, DateTime, Text, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from datetime import datetime
-import json
+
 
 Base = declarative_base()
 
@@ -98,7 +98,6 @@ class Hotel(Base):
 
     # 评级和设施
     rating = Column(Integer)
-    amenities = Column(Text)  # 存储为JSON字符串
 
     # 搜索参数
     search_latitude = Column(Float)
@@ -115,13 +114,124 @@ class Hotel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class HotelAmenity(Base):
-    __tablename__ = 'hotel_amenities'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+
+class HotelOffer(Base):
+    __tablename__ = 'hotel_offers'
+
+    id = Column(String(50), primary_key=True)
     hotel_id = Column(String(50), ForeignKey('hotels.id'))
-    amenity_name = Column(String(100))
-    amenity_category = Column(String(50))
+    # 入住信息
+    check_in_date = Column(String(20))
+    check_out_date = Column(String(20))
+    rate_code = Column(String(50))
+
+    # 房间信息
+    room_type = Column(String(50))
+    room_description = Column(Text)
+
+    # 客人信息
+    adults = Column(Integer)
+    children = Column(Integer)
+
+    # 价格信息
+    currency = Column(String(10))
+    base_price = Column(Float)
+    total_price = Column(Float)
+
+    # 政策信息
+    payment_type = Column(String(50))
+    refundable = Column(String(50))
+
+    # 原始数据
+    raw_data = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     # 关系
     hotel = relationship("Hotel")
+
+
+class HotelSentiment(Base):
+    __tablename__ = 'hotel_sentiments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    hotel_id = Column(String(50), ForeignKey('hotels.id'))
+
+    # 评价信息
+    overall_rating = Column(Integer)
+    number_of_reviews = Column(Integer)
+    number_of_ratings = Column(Integer)
+
+    # 细分评价
+    staff_rating = Column(Integer)
+    location_rating = Column(Integer)
+    service_rating = Column(Integer)
+    room_comforts_rating = Column(Integer)
+    internet_rating = Column(Integer)
+    sleep_quality_rating = Column(Integer)
+    value_for_money_rating = Column(Integer)
+    facilities_rating = Column(Integer)
+    catering_rating = Column(Integer)
+    points_of_interest_rating = Column(Integer)
+
+    # 原始数据
+    raw_data = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    hotel = relationship("Hotel")
+
+
+class SearchHistory(Base):
+    __tablename__ = 'search_history'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # 搜索信息
+    query = Column(String(500), nullable=False)
+    intent_type = Column(String(50), nullable=False)
+    location = Column(String(100))
+
+    # 搜索结果
+    search_results = Column(JSON)
+    result_count = Column(Integer, default=0)
+
+    # 原始数据和时间戳
+    raw_data = Column(Text)
+    search_timestamp = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'query': self.query,
+            'intent_type': self.intent_type,
+            'location': self.location,
+            'result_count': self.result_count,
+            'search_timestamp': self.search_timestamp.isoformat() if self.search_timestamp else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class CachedSearchData(Base):
+    __tablename__ = 'cached_search_data'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # 缓存键
+    query_hash = Column(String(64), unique=True, nullable=False)
+    intent_type = Column(String(50), nullable=False)
+    location = Column(String(100), nullable=False)
+
+    # 缓存数据
+    search_data = Column(JSON, nullable=False)
+
+    # 时间信息
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def is_expired(self):
+        return datetime.utcnow() > self.expires_at
+
+
+

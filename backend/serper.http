@@ -1,0 +1,123 @@
+### 1. 健康检查
+GET http://localhost:5000/health
+Content-Type: application/json
+
+### 2. 获取支持的意图类型
+GET http://localhost:5000/api/search/intents
+Content-Type: application/json
+
+### 3. 搜索东京景点
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "景点",
+    "location": "东京"
+}
+
+### 4. 搜索东京寿司餐厅
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "餐厅",
+    "location": "东京",
+    "cuisine": "寿司",
+    "budget": "高端"
+}
+
+### 5. 搜索东京5日游攻略
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "攻略",
+    "location": "东京",
+    "days": 5
+}
+
+### 6. 搜索东京樱花季时间
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "活动时间",
+    "location": "东京",
+    "event_type": "樱花季"
+}
+
+### 7. 搜索东京交通信息
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "交通",
+    "location": "东京"
+}
+
+### 8. 搜索东京银座住宿
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "住宿",
+    "location": "东京",
+    "area": "银座"
+}
+
+### 9. 搜索东京文化信息
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "文化",
+    "location": "东京"
+}
+
+### 10. 搜索东京购物信息
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "购物",
+    "location": "东京"
+}
+
+### 11. 搜索东京夜生活
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "夜生活",
+    "location": "东京"
+}
+
+### 12. 通用搜索 - 东京旅游
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "通用",
+    "location": "东京",
+    "query": "东京旅游必去的地方"
+}
+
+### 13. 搜索巴黎景点（测试其他城市）
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "景点",
+    "location": "巴黎",
+    "country": "法国"
+}
+
+### 14. 搜索纽约餐厅（测试其他城市）
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "餐厅",
+    "location": "纽约",
+    "cuisine": "披萨"
+}

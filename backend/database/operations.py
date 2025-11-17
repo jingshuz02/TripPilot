@@ -1,7 +1,10 @@
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-from .models import FlightOffer, FlightAmenity, Hotel, HotelAmenity
+from .models import FlightOffer, FlightAmenity, Hotel, HotelOffer, HotelSentiment,SearchHistory, CachedSearchData
 import json
+import hashlib
+from .db_init import get_session
+from datetime import datetime, timedelta
 
 
 class FlightOperations:
@@ -180,7 +183,6 @@ class HotelOperations:
             distance_value=distance.get('value'),
             distance_unit=distance.get('unit'),
             rating=hotel.get('rating'),
-            amenities=json.dumps([], ensure_ascii=False),  # 可以从其他API获取
             search_latitude=search_params.get('latitude') if search_params else None,
             search_longitude=search_params.get('longitude') if search_params else None,
             search_radius=search_params.get('radius') if search_params else None,
@@ -231,3 +233,320 @@ class HotelOperations:
             "rating_distribution": dict(rating_stats),
             "city_distribution": dict(city_stats)
         }
+
+    def save_hotel_offers(self, hotel_offers_data: Dict[str, Any], search_params: Dict[str, Any] = None) -> Dict[
+        str, Any]:
+        """保存酒店报价信息"""
+        try:
+            offers_data = hotel_offers_data.get('data', [])
+            saved_count = 0
+            hotel_ids = []
+
+            for hotel_offer in offers_data:
+                hotel_id = hotel_offer.get('hotel', {}).get('hotelId')
+                if hotel_id:
+                    hotel_ids.append(hotel_id)
+
+                # 处理每个酒店的报价
+                offers = hotel_offer.get('offers', [])
+                for offer in offers:
+                    offer_id = offer.get('id')
+
+                    # 检查报价是否已存在
+                    existing_offer = self.session.query(HotelOffer).filter(HotelOffer.id == offer_id).first()
+                    if existing_offer:
+                        continue
+
+                    # 创建酒店报价记录
+                    offer_record = self._create_hotel_offer(offer, hotel_offer, search_params)
+                    self.session.add(offer_record)
+                    saved_count += 1
+
+            self.session.commit()
+
+            return {
+                "success": True,
+                "saved_count": saved_count,
+                "hotel_ids": list(set(hotel_ids)),  # 去重
+                "total_offers": saved_count
+            }
+
+        except Exception as e:
+            self.session.rollback()
+            return {"success": False, "error": str(e)}
+
+    def save_hotel_sentiments(self, sentiments_data: Dict[str, Any]) -> Dict[str, Any]:
+        """保存酒店评价信息"""
+        try:
+            sentiments = sentiments_data.get('data', [])
+            saved_count = 0
+            hotel_ids = []
+
+            for sentiment in sentiments:
+                hotel_id = sentiment.get('hotelId')
+                if hotel_id:
+                    hotel_ids.append(hotel_id)
+
+                # 检查评价是否已存在
+                existing_sentiment = self.session.query(HotelSentiment).filter(
+                    HotelSentiment.hotel_id == hotel_id
+                ).first()
+
+                if existing_sentiment:
+                    # 更新现有评价
+                    self._update_hotel_sentiment(existing_sentiment, sentiment)
+                    saved_count += 1
+                    print(f"🔄 更新酒店评价: {hotel_id}")
+                else:
+                    # 创建新评价记录
+                    sentiment_record = self._create_hotel_sentiment(sentiment)
+                    self.session.add(sentiment_record)
+                    saved_count += 1
+                    print(f"✅ 保存酒店评价: {hotel_id}")
+
+            self.session.commit()
+
+            return {
+                "success": True,
+                "saved_count": saved_count,
+                "hotel_ids": hotel_ids,
+                "total_sentiments": saved_count
+            }
+
+        except Exception as e:
+            self.session.rollback()
+            return {"success": False, "error": str(e)}
+
+    def _create_hotel_offer(self, offer: Dict[str, Any], hotel_offer: Dict[str, Any],
+                            search_params: Dict[str, Any]) -> HotelOffer:
+        """创建酒店报价记录"""
+        hotel_info = hotel_offer.get('hotel', {})
+        price_info = offer.get('price', {})
+        room_info = offer.get('room', {})
+        guests_info = offer.get('guests', {})
+        policies_info = offer.get('policies', {})
+
+        return HotelOffer(
+            id=offer.get('id'),
+            hotel_id=hotel_info.get('hotelId'),
+            check_in_date=offer.get('checkInDate'),
+            check_out_date=offer.get('checkOutDate'),
+            rate_code=offer.get('rateCode'),
+            room_type=room_info.get('type'),
+            room_description=room_info.get('description', {}).get('text'),
+            adults=guests_info.get('adults', 0),
+            children=guests_info.get('children', 0),
+            currency=price_info.get('currency'),
+            base_price=float(price_info.get('base', 0)),
+            total_price=float(price_info.get('total', 0)),
+            payment_type=policies_info.get('paymentType'),
+            refundable=policies_info.get('refundable', {}).get('cancellationRefund'),
+            raw_data=json.dumps(offer, ensure_ascii=False)
+        )
+
+    def _create_hotel_sentiment(self, sentiment: Dict[str, Any]) -> HotelSentiment:
+        """创建酒店评价记录"""
+        sentiments = sentiment.get('sentiments', {})
+
+        return HotelSentiment(
+            hotel_id=sentiment.get('hotelId'),
+            overall_rating=sentiment.get('overallRating'),
+            number_of_reviews=sentiment.get('numberOfReviews'),
+            number_of_ratings=sentiment.get('numberOfRatings'),
+            staff_rating=sentiments.get('staff'),
+            location_rating=sentiments.get('location'),
+            service_rating=sentiments.get('service'),
+            room_comforts_rating=sentiments.get('roomComforts'),
+            internet_rating=sentiments.get('internet'),
+            sleep_quality_rating=sentiments.get('sleepQuality'),
+            value_for_money_rating=sentiments.get('valueForMoney'),
+            facilities_rating=sentiments.get('facilities'),
+            catering_rating=sentiments.get('catering'),
+            points_of_interest_rating=sentiments.get('pointsOfInterest'),
+            raw_data=json.dumps(sentiment, ensure_ascii=False)
+        )
+
+    def _update_hotel_sentiment(self, existing: HotelSentiment, sentiment: Dict[str, Any]):
+        """更新酒店评价记录"""
+        sentiments = sentiment.get('sentiments', {})
+
+        existing.overall_rating = sentiment.get('overallRating', existing.overall_rating)
+        existing.number_of_reviews = sentiment.get('numberOfReviews', existing.number_of_reviews)
+        existing.number_of_ratings = sentiment.get('numberOfRatings', existing.number_of_ratings)
+        existing.staff_rating = sentiments.get('staff', existing.staff_rating)
+        existing.location_rating = sentiments.get('location', existing.location_rating)
+        existing.service_rating = sentiments.get('service', existing.service_rating)
+        existing.room_comforts_rating = sentiments.get('roomComforts', existing.room_comforts_rating)
+        existing.internet_rating = sentiments.get('internet', existing.internet_rating)
+        existing.sleep_quality_rating = sentiments.get('sleepQuality', existing.sleep_quality_rating)
+        existing.value_for_money_rating = sentiments.get('valueForMoney', existing.value_for_money_rating)
+        existing.facilities_rating = sentiments.get('facilities', existing.facilities_rating)
+        existing.catering_rating = sentiments.get('catering', existing.catering_rating)
+        existing.points_of_interest_rating = sentiments.get('pointsOfInterest', existing.points_of_interest_rating)
+        existing.raw_data = json.dumps(sentiment, ensure_ascii=False)
+
+
+class SearchOperations:
+    """搜索相关数据库操作"""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def save_search_result(self, search_data: Dict[str, Any]) -> bool:
+        """保存搜索结果到数据库"""
+        try:
+            search_record = SearchHistory(
+                query=search_data.get("query", ""),
+                intent_type=search_data.get("intent_type", "通用"),
+                location=search_data.get("location", ""),
+                search_results=search_data.get("search_results", {}),
+                result_count=search_data.get("result_count", 0),
+                raw_data=json.dumps(search_data.get("search_results", {}), ensure_ascii=False),
+                search_timestamp=datetime.fromisoformat(search_data.get("search_timestamp")) if search_data.get(
+                    "search_timestamp") else datetime.utcnow()
+            )
+
+            self.session.add(search_record)
+            self.session.commit()
+            print(f"✅ 搜索记录已保存: {search_data.get('query')}")
+            return True
+
+        except Exception as e:
+            print(f"❌ 保存搜索记录失败: {e}")
+            self.session.rollback()
+            return False
+
+    def get_search_history(self, limit: int = 10) -> List[Dict]:
+        """获取搜索历史记录"""
+        try:
+            history = self.session.query(SearchHistory).order_by(SearchHistory.created_at.desc()).limit(limit).all()
+            return [item.to_dict() for item in history]
+        except Exception as e:
+            print(f"❌ 获取搜索历史失败: {e}")
+            return []
+
+    def save_to_cache(self, query: str, intent_type: str, location: str, search_data: Dict[str, Any]) -> bool:
+        """保存搜索结果到缓存"""
+        try:
+            query_str = f"{query}_{intent_type}_{location}"
+            query_hash = hashlib.sha256(query_str.encode()).hexdigest()
+            expires_at = datetime.utcnow() + timedelta(hours=1)
+
+            cached_data = CachedSearchData(
+                query_hash=query_hash,
+                intent_type=intent_type,
+                location=location,
+                search_data=search_data,
+                expires_at=expires_at
+            )
+
+            # 删除已存在的缓存
+            existing_cache = self.session.query(CachedSearchData).filter_by(query_hash=query_hash).first()
+            if existing_cache:
+                self.session.delete(existing_cache)
+
+            self.session.add(cached_data)
+            self.session.commit()
+            print(f"💾 搜索结果已缓存: {query}")
+            return True
+
+        except Exception as e:
+            print(f"❌ 缓存保存失败: {e}")
+            self.session.rollback()
+            return False
+
+    def get_from_cache(self, query: str, intent_type: str, location: str) -> Optional[Dict[str, Any]]:
+        """从缓存获取搜索结果"""
+        try:
+            query_str = f"{query}_{intent_type}_{location}"
+            query_hash = hashlib.sha256(query_str.encode()).hexdigest()
+
+            cached_data = self.session.query(CachedSearchData).filter_by(query_hash=query_hash).first()
+
+            if cached_data and not cached_data.is_expired():
+                print(f"🔍 从缓存获取结果: {query}")
+                return cached_data.search_data
+            else:
+                if cached_data:
+                    self.session.delete(cached_data)
+                    self.session.commit()
+                return None
+
+        except Exception as e:
+            print(f"❌ 缓存获取失败: {e}")
+            return None
+
+    def get_search_statistics(self) -> Dict[str, Any]:
+        """获取搜索统计信息"""
+        try:
+            total_searches = self.session.query(SearchHistory).count()
+
+            intent_stats = {}
+            intents = self.session.query(SearchHistory.intent_type).distinct().all()
+            for intent in intents:
+                intent_type = intent[0]
+                count = self.session.query(SearchHistory).filter_by(intent_type=intent_type).count()
+                intent_stats[intent_type] = count
+
+            yesterday = datetime.utcnow() - timedelta(days=1)
+            recent_searches = self.session.query(SearchHistory).filter(SearchHistory.created_at >= yesterday).count()
+
+            return {
+                "total_searches": total_searches,
+                "recent_searches_24h": recent_searches,
+                "intent_breakdown": intent_stats
+            }
+        except Exception as e:
+            print(f"❌ 获取搜索统计失败: {e}")
+            return {}
+
+
+# 便捷函数
+def save_search_result(search_data: Dict[str, Any]) -> bool:
+    """保存搜索结果的便捷函数"""
+    session = get_session()
+    try:
+        ops = SearchOperations(session)
+        return ops.save_search_result(search_data)
+    finally:
+        session.close()
+
+
+def get_search_history(limit: int = 10) -> List[Dict]:
+    """获取搜索历史的便捷函数"""
+    session = get_session()
+    try:
+        ops = SearchOperations(session)
+        return ops.get_search_history(limit)
+    finally:
+        session.close()
+
+
+def save_to_cache(query: str, intent_type: str, location: str, search_data: Dict[str, Any]) -> bool:
+    """保存到缓存的便捷函数"""
+    session = get_session()
+    try:
+        ops = SearchOperations(session)
+        return ops.save_to_cache(query, intent_type, location, search_data)
+    finally:
+        session.close()
+
+
+def get_from_cache(query: str, intent_type: str, location: str) -> Optional[Dict[str, Any]]:
+    """从缓存获取的便捷函数"""
+    session = get_session()
+    try:
+        ops = SearchOperations(session)
+        return ops.get_from_cache(query, intent_type, location)
+    finally:
+        session.close()
+
+
+def get_search_statistics() -> Dict[str, Any]:
+    """获取搜索统计的便捷函数"""
+    session = get_session()
+    try:
+        ops = SearchOperations(session)
+        return ops.get_search_statistics()
+    finally:
+        session.close()

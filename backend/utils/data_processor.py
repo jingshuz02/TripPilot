@@ -76,3 +76,78 @@ class FlightDataProcessor:
             key_info.append(info)
 
         return key_info
+
+
+
+class HotelDataProcessor:
+    def validate_hotel_data(self, hotel_data: Dict[str, Any]) -> List[str]:
+        """验证酒店数据"""
+        errors = []
+
+        if 'data' not in hotel_data:
+            errors.append("缺少data字段")
+            return errors
+
+        hotels = hotel_data.get('data', [])
+        for i, hotel in enumerate(hotels):
+            if not hotel.get('hotelId'):
+                errors.append(f"第{i}个酒店缺少hotelId")
+            if not hotel.get('name'):
+                errors.append(f"第{i}个酒店缺少name")
+
+        return errors
+
+    def transform_hotel_data(self, hotel_data: Dict[str, Any]) -> Dict[str, Any]:
+        """转换酒店数据格式"""
+        # 这里可以对数据进行清洗和转换
+        return hotel_data
+
+    def extract_key_information(self, hotel_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """提取关键酒店信息"""
+        hotels = hotel_data.get('data', [])
+        key_info = []
+
+        for hotel in hotels:
+            info = {
+                'hotel_id': hotel.get('hotelId'),
+                'name': hotel.get('name'),
+                'rating': hotel.get('rating'),
+                'city': hotel.get('address', {}).get('cityName'),
+                'distance': hotel.get('distance', {}).get('value'),
+                'distance_unit': hotel.get('distance', {}).get('unit'),
+                'latitude': hotel.get('geoCode', {}).get('latitude'),
+                'longitude': hotel.get('geoCode', {}).get('longitude')
+            }
+            key_info.append(info)
+
+        return key_info
+
+    def analyze_hotels(self, hotel_data: Dict[str, Any]) -> Dict[str, Any]:
+        """分析酒店数据"""
+        key_info = self.extract_key_information(hotel_data)
+
+        if not key_info:
+            return {"analysis": "无有效酒店数据"}
+
+        ratings = [hotel['rating'] for hotel in key_info if hotel.get('rating')]
+        distances = [hotel['distance'] for hotel in key_info if hotel.get('distance')]
+        cities = [hotel['city'] for hotel in key_info if hotel.get('city')]
+
+        analysis = {
+            "total_hotels": len(key_info),
+            "rating_range": {
+                "min": min(ratings) if ratings else 0,
+                "max": max(ratings) if ratings else 0,
+                "average": sum(ratings) / len(ratings) if ratings else 0
+            },
+            "distance_range": {
+                "min": min(distances) if distances else 0,
+                "max": max(distances) if distances else 0,
+                "average": sum(distances) / len(distances) if distances else 0
+            },
+            "cities": list(set(cities)),
+            "highest_rated": max(key_info, key=lambda x: x.get('rating', 0)) if key_info else None,
+            "closest_hotel": min(key_info, key=lambda x: x.get('distance', float('inf'))) if key_info else None
+        }
+
+        return analysis
