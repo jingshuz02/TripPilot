@@ -1,13 +1,33 @@
 
+
+
+import sys
+import os
+# 将项目根目录添加到 python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 import streamlit as st
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+from frontend.components.weather_widget import display_weather
+from frontend.components.hotel_card import display_hotel_card
+from frontend.components.flight_card import display_flight_card, display_flight_details_modal
+# 引入自定义组件
+
+
 # --------------- 初始化全局状态 ---------------
 # 初始化API客户端
 if "api_client" not in st.session_state:
-    from api_client import APIClient
-    st.session_state.api_client = APIClient()
+    # 假设目录下有 api_client.py，如果没有请自行调整
+    try:
+        from api_client import APIClient
+        st.session_state.api_client = APIClient()
+    except ImportError:
+        # 模拟一个假的 Client 以防报错
+        class MockClient:
+            def check_health(self): return True
+            def chat(self, **kwargs): return {}
+        st.session_state.api_client = MockClient()
 
 # 初始化多对话存储
 if "conversations" not in st.session_state:
@@ -34,12 +54,33 @@ if "budget" not in st.session_state:
 
 # 初始化API连接状态
 if "api_connected" not in st.session_state:
-    st.session_state.api_connected = st.session_state.api_client.check_health()
+    st.session_state.api_connected = getattr(st.session_state.api_client, 'check_health', lambda: False)()
 
 # 确保当前对话的消息列表存在
 current_conv = st.session_state.conversations[st.session_state.active_conv_id]
 if "messages" not in current_conv:
     current_conv["messages"] = []
+
+# --------------- 辅助函数：处理预订 ---------------
+def handle_booking(item_type, item_data, price):
+    """处理预订逻辑"""
+    order_id = str(uuid4())[:8]
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # 扣除预算
+    # 注意：这里简单扣除，实际可能需要更复杂的逻辑
+    
+    new_order = {
+        "id": order_id,
+        "type": item_type,
+        "item": item_data, # 比如酒店名或航班号
+        "price": price,
+        "time": timestamp,
+        "status": "已确认"
+    }
+    
+    st.session_state.orders.append(new_order)
+    st.toast(f"✅ 预订成功！已扣除 ${price}", icon="🎉")
 
 # --------------- 页面配置 ---------------
 st.set_page_config(
@@ -81,15 +122,26 @@ with st.sidebar:
         st.rerun()
     st.divider()
 
-    # 2. 旅行偏好设置（将发送给后端）
+    # 2. 旅行偏好设置
     st.header("🎯 旅行偏好")
-    budget = st.number_input(
-        "预算 (USD)",
+    # 计算剩余预算
+    total_spent = sum(o['price'] for o in st.session_state.orders)
+    initial_budget = st.session_state.budget
+    remaining_budget = initial_budget - total_spent
+    
+    st.metric("剩余预算", f"${remaining_budget}", delta=f"-${total_spent}" if total_spent > 0 else None)
+    
+    budget_input = st.number_input(
+        "总预算 (USD)",
         min_value=0,
-        value=st.session_state.budget,
+        value=initial_budget,
         step=100,
-        key="travel_budget"
+        key="travel_budget_input"
     )
+    if budget_input != initial_budget:
+        st.session_state.budget = budget_input
+        st.rerun()
+        
     start_date = st.date_input(
         "出发日期",
         value=datetime.now(),
@@ -106,9 +158,9 @@ with st.sidebar:
         key="language"
     )
     
-    # 打包旅行偏好为字典
     travel_preferences = {
-        "budget": budget,
+        "budget": remaining_budget, # 传给 Agent 剩余预算
+        "total_budget": initial_budget,
         "start_date": start_date.strftime("%Y-%m-%d"),
         "end_date": end_date.strftime("%Y-%m-%d"),
         "language": language
@@ -116,13 +168,14 @@ with st.sidebar:
     st.divider()
 
     # 3. 订单记录展示
-    st.header("📋 所有订单")
+    st.header("📋 订单记录")
     if st.session_state.orders:
         for order in st.session_state.orders:
-            st.write(f"• {order['item']} - ${order['price']}")
-            st.caption(f"时间: {order['time']} | 状态: {order['status']}")
-        total_spent = sum(o['price'] for o in st.session_state.orders)
-        st.write(f"**总消费**: ${total_spent}")
+            icon = "🏨" if order['type'] == 'hotel' else "✈️"
+            with st.expander(f"{icon} {order['item']} - ${order['price']}"):
+                st.caption(f"订单号: {order['id']}")
+                st.caption(f"时间: {order['time']}")
+                st.write(f"状态: **{order['status']}**")
     else:
         st.info("暂无订单")
     st.divider()
@@ -136,294 +189,225 @@ with st.sidebar:
         else:
             st.error("❌ 后端未连接")
     with col2:
-        if st.button("🔄 刷新"):
-            st.session_state.api_connected = st.session_state.api_client.check_health()
+        if st.button("🔄"):
+            st.session_state.api_connected = getattr(st.session_state.api_client, 'check_health', lambda: False)()
             st.rerun()
-    if not st.session_state.api_connected:
-        st.info("请启动后端服务：`python backend/app.py`")
+            
+    # 开发者工具：清空当前对话
+    if st.button("🗑️ 清空当前对话"):
+        st.session_state.conversations[st.session_state.active_conv_id]["messages"] = []
+        st.rerun()
 
-# --------------- 聊天内容展示与交互 ---------------
+
+# --------------- 聊天内容展示逻辑 ---------------
+
+@st.dialog("航班详情")
+def show_flight_details_dialog(flight):
+    # 模拟 amenity 数据，实际应从 flight 数据中获取
+    mock_amenities = [
+        {"service": "机上餐饮", "is_chargeable": False},
+        {"service": "Wi-Fi", "is_chargeable": True},
+        {"service": "USB充电", "is_chargeable": False}
+    ]
+    display_flight_details_modal(flight, mock_amenities)
+
 # 获取当前对话的消息列表
 current_conv = st.session_state.conversations[st.session_state.active_conv_id]
 messages = current_conv["messages"]
 
-# 显示历史消息
-for msg in messages:
+# 1. 渲染历史消息（包含组件）
+#    注意：我们需要给每个组件一个唯一的key，避免冲突
+for idx, msg in enumerate(messages):
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        # 显示文本内容
+        if msg.get("content"):
+            st.markdown(msg["content"])
+        
+        # 显示 Payload 组件内容 (如果存在)
+        payload = msg.get("payload")
+        if payload:
+            p_type = payload.get("type")
+            p_data = payload.get("data")
+            
+            # --- 渲染酒店列表 ---
+            if p_type == "hotels" and isinstance(p_data, list):
+                st.markdown("---")
+                st.subheader("🏨 推荐酒店")
+                for i, hotel in enumerate(p_data):
+                    # 生成唯一 key
+                    unique_key = f"hist_{idx}_hotel_{hotel.get('id', i)}"
+                    
+                    # 调用组件
+                    action = display_hotel_card(hotel, key_prefix=unique_key)
+                    
+                    # 处理回调
+                    if action == "book":
+                        handle_booking(
+                            "hotel", 
+                            hotel.get('name', '未知酒店'), 
+                            hotel.get('total_price', 0)
+                        )
+                        st.rerun()
 
-# 处理用户输入
+            # --- 渲染航班列表 ---
+            elif p_type == "flights" and isinstance(p_data, list):
+                st.markdown("---")
+                st.subheader("✈️ 推荐航班")
+                for i, flight in enumerate(p_data):
+                    unique_key = f"hist_{idx}_flight_{flight.get('id', i)}"
+                    
+                    action = display_flight_card(flight, key_prefix=unique_key)
+                    
+                    if action == "book":
+                        handle_booking(
+                            "flight", 
+                            f"{flight.get('carrier_code')}{flight.get('flight_number')}", 
+                            flight.get('total_price', 0)
+                        )
+                        st.rerun()
+                    elif action == "details":
+                        show_flight_details_dialog(flight)
+
+            # --- 渲染天气组件 ---
+            elif p_type == "weather" and isinstance(p_data, dict):
+                st.markdown("---")
+                # 天气可以直接展示，不需要交互 key
+                display_weather(p_data, city_name=payload.get("city_name", "目的地"))
+
+            # --- 渲染行程 (暂略) ---
+            elif p_type == "schedule":
+                st.info("📅 行程展示功能开发中...")
+                with st.expander("查看原始数据"):
+                    st.json(p_data)
+
+
+# 2. 处理用户输入
 if prompt := st.chat_input("请输入您的旅行需求...（例如：帮我订东京三晚的酒店）"):
-        # 添加用户消息到当前对话
+    
+    # 2.1 添加用户消息
     messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    # 强制刷新以立即显示用户消息
+    st.rerun()
 
+# 注意：这里逻辑稍微调整，因为 st.chat_input 提交后会 rerun，
+# 我们需要在 rerun 的这一次执行中，检测到最后一条消息是 user，然后触发 assistant 回复
+if messages and messages[-1]["role"] == "user":
+    
+    last_user_msg = messages[-1]["content"]
+    
     with st.chat_message("assistant"):
-        with st.spinner("处理中..."):
-            # 后端未连接时的处理
+        with st.spinner("正在规划您的旅程..."):
+            
+            # --- A. 检查连接 ---
             if not st.session_state.api_connected:
-                error_msg = "后端未连接，请先启动后端服务再使用功能"
-                st.error(error_msg)
-                messages.append({"role": "assistant", "content": error_msg})
-                st.rerun()
+                st.error("⚠️ 后端服务未连接")
+                messages.append({"role": "assistant", "content": "⚠️ 后端服务未连接，请先启动服务器。"})
+                st.stop()
 
-            # 后端已连接时的处理
-            else:
-                # 计算剩余预算
-                total_spent = sum(o['price'] for o in st.session_state.orders)
-                remaining_budget = budget - total_spent
-                travel_preferences["budget"] = remaining_budget  # 更新为剩余预算
-
-                # 发送用户需求和旅行偏好给后端
+            # --- B. 调用 API ---
+            try:
+                # 实际调用
                 backend_response = st.session_state.api_client.chat(
-                    prompt=prompt,
+                    prompt=last_user_msg,
                     preferences=travel_preferences
                 )
+            except Exception as e:
+                st.error(f"调用失败: {str(e)}")
+                st.stop()
 
-                # 处理后端无响应的情况
-                if not backend_response:
-                    no_response_msg = "未收到后端响应，请稍后再试"
-                    st.error(no_response_msg)
-                    messages.append({"role": "assistant", "content": no_response_msg})
-                    st.rerun()
+            # --- C. 解析响应 ---
+            if not backend_response:
+                st.error("后端无响应")
+                st.stop()
 
-                # 处理后端响应
-                action = backend_response.get("action")
-                params = backend_response.get("params", {})
+            action = backend_response.get("action")
+            params = backend_response.get("params", {})
+            reply_text = backend_response.get("content", "")
+            
+            # 准备构建新的消息对象
+            new_msg = {
+                "role": "assistant", 
+                "content": reply_text,
+                "payload": None 
+            }
 
-                # 直接回复
-                if action == "reply":
-                    reply_content = backend_response.get("content", "已收到您的需求")
-                    st.markdown(reply_content)
-                    messages.append({"role": "assistant", "content": reply_content})
-
-                # 搜索酒店
-                elif action == "search_hotels":
-                    hotels = st.session_state.api_client.search_hotels(
-                        city=params.get("city", ""),
-                        check_in=params.get("check_in", travel_preferences["start_date"]),
-                        check_out=params.get("check_out", travel_preferences["end_date"]),
-                        budget=remaining_budget
-                    )
-
-                    if not hotels or "hotels" not in hotels:
-                        no_hotel_msg = "未找到符合条件的酒店"
-                        st.error(no_hotel_msg)
-                        messages.append({"role": "assistant", "content": no_hotel_msg})
-                    else:
-                        '''调用展示函数'''
-                        pass
-
-
-                        # hotel_list_msg = "为您找到以下酒店：\n\n"
-                        # for i, hotel in enumerate(hotels["hotels"]):
-                        #     hotel_list_msg += f"{i+1}. **{hotel['name']}**\n"
-                        #     hotel_list_msg += f"   价格：${hotel['price']}/晚 | 评分：{hotel.get('rating', '暂无')}\n"
-                        #     hotel_list_msg += f"   地址：{hotel['address']}\n"
-                        #     hotel_list_msg += f"   设施：{', '.join(hotel.get('amenities', ['无']))[:50]}...\n\n"
-                        # hotel_list_msg += "请回复酒店编号（如1、2）完成预订，或告诉我您的其他需求"
-                        # st.markdown(hotel_list_msg)
-                        # messages.append({
-                        #     "role": "assistant",
-                        #     "content": hotel_list_msg,
-                        #     "attached_hotels": hotels["hotels"]
-                        # })
-
-                # 搜索航班
-                elif action == "search_flights":
-                    # 获取航班ID列表
-                    flight_ids = st.session_state.api_client.search_flights(
-                        origin=params.get("origin", ""),
-                        destination=params.get("destination", ""),
-                        date=params.get("date", travel_preferences["start_date"]),
-                        adults=params.get("adults", 1),
-                        travel_class=params.get("travel_class", "ECONOMY")
-                    )
-
-                    if not flight_ids:
-                        no_flight_msg = "未找到符合条件的航班"
-                        st.error(no_flight_msg)
-                        messages.append({"role": "assistant", "content": no_flight_msg})
-                    else:
-                        # 获取并展示每个航班的详情
-                        flight_list_msg = "为您找到以下航班：\n\n"
-                        attached_flights = []
-                        
-                        for i, flight_id in enumerate(flight_ids[:10]):  # 限制最多显示5个结果
-                            flight = st.session_state.api_client.get_flight_details(flight_id)
-                            if not flight:
-                                continue
-                            pass
-                                
-                            # attached_flights.append(flight)
-                            # flight_list_msg += f"{i+1}. **{flight['carrier']} {flight['flight_number']}**\n"
-                            # flight_list_msg += f"   出发：{flight['departure']['iata']} {flight['departure']['time']}\n"
-                            # flight_list_msg += f"   到达：{flight['arrival']['iata']} {flight['arrival']['time']}\n"
-                            # flight_list_msg += f"   时长：{flight['duration']}分钟 | 舱位：{flight['cabin_class']}\n"
-                            # flight_list_msg += f"   价格：{flight['price']} {flight['currency']}\n\n"
-                            
-                        if not attached_flights:
-                            no_details_msg = "无法获取航班详情"
-                            st.error(no_details_msg)
-                            messages.append({"role": "assistant", "content": no_details_msg})
-                        else:
-                            flight_list_msg += "请回复航班编号（如1、2）完成预订，或告诉我您的其他需求"
-                            st.markdown(flight_list_msg)
-                            messages.append({
-                                "role": "assistant",
-                                "content": flight_list_msg,
-                                "attached_flights": attached_flights
-                            })
-
-                # 未知指令处理
-                else:
-                    default_msg = "已收到您的需求，正在处理中..."
-                    st.markdown(default_msg)
-                    messages.append({"role": "assistant", "content": default_msg})
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # 添加用户消息到当前对话
-    messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("处理中..."):
-            # 后端未连接时的处理（提前终止逻辑）
-            if not st.session_state.api_connected:
-                error_msg = "后端未连接，请先启动后端服务再使用功能"
-                st.error(error_msg)
-                messages.append({"role": "assistant", "content": error_msg})
-                pass
-
-            # 后端已连接时的处理
-            else:
-                #if len(order)>order_count:
-                    # total_spent = sum(order["price"] for order in st.session_state.orders)
-                    # remaining_budget = st.session_state.budget - total_spent
-                    # travel_preferences = {
-                    #     "budget": remaining_budget,
-                    #     "start_date": start_date.strftime("%Y-%m-%d"),
-                    #     "end_date": end_date.strftime("%Y-%m-%d"),
-                    #     "language": language
-                    # }
-
-
-                # 1. 发送用户需求和旅行偏好给后端
-                backend_response = st.session_state.api_client.chat(
-                    prompt=prompt,
-                    preferences=travel_preferences
+            # ==========================================
+            #  ACTION 1: 搜索酒店
+            # ==========================================
+            if action == "search_hotels":
+                search_result = st.session_state.api_client.search_hotels(
+                    city=params.get("city", ""),
+                    check_in=params.get("check_in", travel_preferences.get("start_date")),
+                    check_out=params.get("check_out", travel_preferences.get("end_date")),
+                    budget=travel_preferences.get("budget")
                 )
-
-                # 2. 处理后端无响应的情况
-                if not backend_response:
-                    no_response_msg = "未收到后端响应，请稍后再试"
-                    st.error(no_response_msg)
-                    messages.append({"role": "assistant", "content": no_response_msg})
-                    pass
-
-                # 3. 处理后端响应
+                hotel_ids = search_result.get("hotel_ids", []) if search_result else []
+                
+                hotels_data = []
+                if hotel_ids:
+                    for h_id in hotel_ids[:5]: # 限制显示前5个
+                        detail = st.session_state.api_client.get_hotel_details(h_id)
+                        if detail: hotels_data.append(detail)
+                
+                if hotels_data:
+                    new_msg["content"] += "\n\n已为您找到以下推荐酒店："
+                    new_msg["payload"] = {"type": "hotels", "data": hotels_data}
                 else:
-                    action = backend_response.get("action")
-                    params = backend_response.get("params", {})
+                    new_msg["content"] += "\n\n(抱歉，未找到符合条件的酒店)"
 
-                    # 3.1 后端直接返回文本回复
-                    if action == "reply":
-                        reply_content = backend_response.get("content", "已收到您的需求")
-                        st.markdown(reply_content)
-                        messages.append({"role": "assistant", "content": reply_content})
+            # ==========================================
+            #  ACTION 2: 搜索航班
+            # ==========================================
+            elif action == "search_flights":
+                flight_ids = st.session_state.api_client.search_flights(
+                    origin=params.get("origin", ""),
+                    destination=params.get("destination", ""),
+                    date=params.get("date", travel_preferences.get("start_date")),
+                )
+                
+                flights_data = []
+                if flight_ids:
+                    for f_id in flight_ids[:5]:
+                        detail = st.session_state.api_client.get_flight_details(f_id)
+                        if detail: flights_data.append(detail)
 
-                    # 3.2 后端指令：搜索酒店
-                    elif action == "search_hotels":
-                        # 调用酒店搜索接口
-                        hotels = st.session_state.api_client.search_hotels(
-                            city=params.get("city", ""),
-                            check_in=params.get("check_in", ""),
-                            check_out=params.get("check_out", ""),
-                            budget=travel_preferences["budget"]
-                        )
+                if flights_data:
+                    new_msg["content"] += "\n\n已为您找到以下推荐航班："
+                    new_msg["payload"] = {"type": "flights", "data": flights_data}
+                else:
+                    new_msg["content"] += "\n\n(抱歉，未找到符合条件的航班)"
 
-                        # 处理搜索结果
-                        if not hotels or "hotels" not in hotels:
-                            no_hotel_msg = "未找到符合条件的酒店"
-                            st.error(no_hotel_msg)
-                            messages.append({"role": "assistant", "content": no_hotel_msg})
-                        else:
-                            # 展示酒店列表
-                            hotel_list_msg = "为您找到以下酒店：\n\n"
-                            for i, hotel in enumerate(hotels["hotels"]):
-                                hotel_list_msg += f"{i+1}. **{hotel['name']}**\n"
-                                hotel_list_msg += f"   价格：${hotel['price']}/晚\n"
-                                hotel_list_msg += f"   地址：{hotel['address']}\n"
-                                hotel_list_msg += f"   描述：{hotel['desc']}\n\n"
-                            hotel_list_msg += "请回复酒店编号（如1、2）完成预订"
-                            st.markdown(hotel_list_msg)
-                            # 暂存酒店信息用于后续预订
-                            messages.append({
-                                "role": "assistant",
-                                "content": hotel_list_msg,
-                                "attached_hotels": hotels["hotels"]
-                            })
+            # ==========================================
+            #  ACTION 3: 天气查询
+            # ==========================================
+            elif action == "get_weather":
+                city = params.get("city", "Unknown")
+                weather_data = st.session_state.api_client.get_weather(
+                    city=city,
+                    start_date=params.get("start_date", ""),
+                    end_date=params.get("end_date", "")
+                )
+                
+                if weather_data:
+                    new_msg["content"] += f"\n\n这是 {city} 当地的天气情况："
+                    new_msg["payload"] = {
+                        "type": "weather", 
+                        "data": weather_data,
+                        "city_name": city
+                    }
 
-                    # 3.3 后端指令：确认预订
-                    elif action == "book_hotel":
-                        # 调用酒店预订接口
-                        booking_result = st.session_state.api_client.book_hotel(
-                            hotel_id=params.get("hotel_id", ""),
-                            trip_id=st.session_state.trips[0]["id"]
-                        )
+            # ==========================================
+            #  ACTION 4: 行程 (Placeholder)
+            # ==========================================
+            elif action == "search_schedule":
+                 schedule_data = st.session_state.api_client.search_schedule(
+                    destination=params.get("destination", ""),
+                    # ... params
+                )
+                 if schedule_data:
+                     new_msg["content"] += "\n\n行程安排已生成。"
+                     new_msg["payload"] = {"type": "schedule", "data": schedule_data}
 
-                        # 处理预订结果
-                        if booking_result and booking_result.get("status") == "success":
-                            order_id = str(uuid4())[:8]
-                            st.session_state.orders.append({
-                                "id": order_id,
-                                "item": booking_result["hotel_name"],
-                                "price": booking_result["price"],
-                                "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "trip_id": st.session_state.trips[0]["id"],
-                                "status": "已预订"
-                            })
-                            success_msg = f"预订成功！订单号：{order_id}\n酒店：{booking_result['hotel_name']}\n总价：${booking_result['price']}"
-                            st.success(success_msg)
-                            messages.append({"role": "assistant", "content": success_msg})
-                        else:
-                            fail_msg = "预订失败，请重试"
-                            st.error(fail_msg)
-                            messages.append({"role": "assistant", "content": fail_msg})
-
-                    # 3.4 未知指令处理
-                    else:
-                        default_msg = "已收到您的需求，正在处理中..."
-                        st.markdown(default_msg)
-                        messages.append({"role": "assistant", "content": default_msg})
-
-
-
-
-
-
-
+            # --- D. 保存并刷新 ---
+            messages.append(new_msg)
+            st.rerun()
