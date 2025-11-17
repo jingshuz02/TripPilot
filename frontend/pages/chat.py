@@ -63,24 +63,28 @@ if "messages" not in current_conv:
 
 # --------------- 辅助函数：处理预订 ---------------
 def handle_booking(item_type, item_data, price):
-    """处理预订逻辑"""
     order_id = str(uuid4())[:8]
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # 扣除预算
-    # 注意：这里简单扣除，实际可能需要更复杂的逻辑
+    # 获取当前活跃的对话 ID
+    current_conv_id = st.session_state.get("active_conv_id", "conv_0")
     
     new_order = {
         "id": order_id,
         "type": item_type,
-        "item": item_data, # 比如酒店名或航班号
+        "item": item_data,
         "price": price,
         "time": timestamp,
-        "status": "已确认"
+        "status": "已确认",
+        "conversation_id": current_conv_id 
     }
     
+    # 确保全局订单列表存在
+    if "orders" not in st.session_state:
+        st.session_state.orders = []
+        
     st.session_state.orders.append(new_order)
-    st.toast(f"✅ 预订成功！已扣除 ${price}", icon="🎉")
+    st.toast(f"✅ 预订成功！(关联对话: {current_conv_id})", icon="🎉")
 
 # --------------- 页面配置 ---------------
 st.set_page_config(
