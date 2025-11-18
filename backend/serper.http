@@ -1,123 +1,166 @@
-### 1. 健康检查
+### backend/API_flight_test.http
+
+### 1. Health Check
 GET http://localhost:5000/health
 Content-Type: application/json
 
-### 2. 获取支持的意图类型
+### 2. Get Supported Intent Types
 GET http://localhost:5000/api/search/intents
 Content-Type: application/json
 
-### 3. 搜索东京景点
+### 3. Search Tokyo Attractions
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "景点",
-    "location": "东京"
+    "intent_type": "attractions",
+    "location": "Tokyo"
 }
 
-### 4. 搜索东京寿司餐厅
+### 4. Search Tokyo Sushi Restaurants
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "餐厅",
-    "location": "东京",
-    "cuisine": "寿司",
-    "budget": "高端"
+    "intent_type": "restaurants",
+    "location": "Tokyo",
+    "cuisine": "sushi",
+    "budget": "luxury"
 }
 
-### 5. 搜索东京5日游攻略
+### 5. Search Tokyo 5-Day Travel Guide
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "攻略",
-    "location": "东京",
+    "intent_type": "guides",
+    "location": "Tokyo",
     "days": 5
 }
 
-### 6. 搜索东京樱花季时间
+### 6. Search Tokyo Cherry Blossom Season
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "活动时间",
-    "location": "东京",
-    "event_type": "樱花季"
+    "intent_type": "seasonal",
+    "location": "Tokyo",
+    "event_type": "cherry blossom season"
 }
 
-### 7. 搜索东京交通信息
+### 7. Search Tokyo Transportation
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "交通",
-    "location": "东京"
+    "intent_type": "transportation",
+    "location": "Tokyo"
 }
 
-### 8. 搜索东京银座住宿
+### 8. Search Tokyo Ginza Accommodation
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "住宿",
-    "location": "东京",
-    "area": "银座"
+    "intent_type": "accommodation",
+    "location": "Tokyo",
+    "area": "Ginza"
 }
 
-### 9. 搜索东京文化信息
+### 9. Search Tokyo Cultural Information
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "文化",
-    "location": "东京"
+    "intent_type": "culture",
+    "location": "Tokyo"
 }
 
-### 10. 搜索东京购物信息
+### 10. Search Tokyo Shopping
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "购物",
-    "location": "东京"
+    "intent_type": "shopping",
+    "location": "Tokyo"
 }
 
-### 11. 搜索东京夜生活
+### 11. Search Tokyo Nightlife
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "夜生活",
-    "location": "东京"
+    "intent_type": "nightlife",
+    "location": "Tokyo"
 }
 
-### 12. 通用搜索 - 东京旅游
+### 12. General Search - Tokyo Travel
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "通用",
-    "location": "东京",
-    "query": "东京旅游必去的地方"
+    "intent_type": "general",
+    "location": "Tokyo",
+    "query": "best places to visit in Tokyo"
 }
 
-### 13. 搜索巴黎景点（测试其他城市）
+### 13. Search Paris Attractions
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "景点",
-    "location": "巴黎",
-    "country": "法国"
+    "intent_type": "attractions",
+    "location": "Paris",
+    "country": "France"
 }
 
-### 14. 搜索纽约餐厅（测试其他城市）
+### 14. Search New York Pizza Restaurants
 POST http://localhost:5000/api/search
 Content-Type: application/json
 
 {
-    "intent_type": "餐厅",
-    "location": "纽约",
-    "cuisine": "披萨"
+    "intent_type": "restaurants",
+    "location": "New York",
+    "cuisine": "pizza"
+}
+
+### 15. Get Search History (Last 10 records)
+GET http://localhost:5000/api/search/history?limit=10
+Content-Type: application/json
+
+### 16. Get Search Statistics
+GET http://localhost:5000/api/search/statistics
+Content-Type: application/json
+
+### 17. Test Error Case - Missing location parameter
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "attractions"
+}
+
+### 18. Test Error Case - Empty request body
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{}
+
+### 19. Test Error Case - Invalid intent type
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "invalid_type",
+    "location": "Tokyo"
+}
+
+### 20. Test Seasonal Search with Winter
+POST http://localhost:5000/api/search
+Content-Type: application/json
+
+{
+    "intent_type": "seasonal",
+    "location": "Hokkaido",
+    "season": "winter"
 }

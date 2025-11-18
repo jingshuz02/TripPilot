@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-from .models import FlightOffer, FlightAmenity, Hotel, HotelOffer, HotelSentiment,SearchHistory, CachedSearchData
+from .models import FlightOffer, FlightAmenity, Hotel, HotelOffer, HotelSentiment,SearchHistory
 import json
 import hashlib
 from .db_init import get_session
@@ -425,56 +425,6 @@ class SearchOperations:
             print(f"❌ 获取搜索历史失败: {e}")
             return []
 
-    def save_to_cache(self, query: str, intent_type: str, location: str, search_data: Dict[str, Any]) -> bool:
-        """保存搜索结果到缓存"""
-        try:
-            query_str = f"{query}_{intent_type}_{location}"
-            query_hash = hashlib.sha256(query_str.encode()).hexdigest()
-            expires_at = datetime.utcnow() + timedelta(hours=1)
-
-            cached_data = CachedSearchData(
-                query_hash=query_hash,
-                intent_type=intent_type,
-                location=location,
-                search_data=search_data,
-                expires_at=expires_at
-            )
-
-            # 删除已存在的缓存
-            existing_cache = self.session.query(CachedSearchData).filter_by(query_hash=query_hash).first()
-            if existing_cache:
-                self.session.delete(existing_cache)
-
-            self.session.add(cached_data)
-            self.session.commit()
-            print(f"💾 搜索结果已缓存: {query}")
-            return True
-
-        except Exception as e:
-            print(f"❌ 缓存保存失败: {e}")
-            self.session.rollback()
-            return False
-
-    def get_from_cache(self, query: str, intent_type: str, location: str) -> Optional[Dict[str, Any]]:
-        """从缓存获取搜索结果"""
-        try:
-            query_str = f"{query}_{intent_type}_{location}"
-            query_hash = hashlib.sha256(query_str.encode()).hexdigest()
-
-            cached_data = self.session.query(CachedSearchData).filter_by(query_hash=query_hash).first()
-
-            if cached_data and not cached_data.is_expired():
-                print(f"🔍 从缓存获取结果: {query}")
-                return cached_data.search_data
-            else:
-                if cached_data:
-                    self.session.delete(cached_data)
-                    self.session.commit()
-                return None
-
-        except Exception as e:
-            print(f"❌ 缓存获取失败: {e}")
-            return None
 
     def get_search_statistics(self) -> Dict[str, Any]:
         """获取搜索统计信息"""

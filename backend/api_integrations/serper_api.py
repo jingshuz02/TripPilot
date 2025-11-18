@@ -4,7 +4,7 @@ import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from backend.api_integrations.api_config import APIConfig
-from backend.database.operations import save_search_result, save_to_cache, get_from_cache
+from backend.database.operations import save_search_result
 
 
 class SerperAPI:
@@ -13,14 +13,16 @@ class SerperAPI:
         self.api_key = self.config.serper_api_key
         self.base_url = "https://google.serper.dev/search"
 
-    def search(self, query: str, num_results: int = 10, intent_type: str = "general", location: str = "") -> Dict[str, Any]:
-        """General search - with caching and database storage"""
+    def search(self, query: str, num_results: int = 10, intent_type: str = "general", location: str = "") -> Dict[
+        str, Any]:
+        """直接搜索，带数据库保存"""
         try:
-            # First try to get from cache
-            cached_result = get_from_cache(query, intent_type, location)
-            if cached_result:
-                print(f"♻️ Using cached results: {query}")
-                return cached_result
+            # 验证API密钥
+            if not self.api_key:
+                return self._create_error_response("Serper API密钥为空")
+
+            if self.api_key == "your_serper_api_key_here":
+                return self._create_error_response("请配置有效的Serper API密钥")
 
             headers = {
                 "X-API-KEY": self.api_key,
@@ -32,30 +34,58 @@ class SerperAPI:
                 "num": num_results
             }
 
-            print(f"🔍 Serper search [{intent_type}]: {query}")
-            response = requests.post(self.base_url, headers=headers, json=payload, timeout=30)
-            response.raise_for_status()
+            print(f"🔍 Serper搜索调试信息:")
+            print(f"  - API密钥: {self.api_key[:10]}...")
+            print(f"  - 查询: {query}")
+            print(f"  - 结果数: {num_results}")
+            print(f"  - 请求URL: {self.base_url}")
 
+            response = requests.post(
+                self.base_url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+
+            print(f"📡 响应状态码: {response.status_code}")
+
+            # 详细的错误处理
+            if response.status_code != 200:
+                error_detail = response.text
+                print(f"❌ API错误详情: {error_detail}")
+
+                # 尝试解析错误信息
+                try:
+                    error_data = response.json()
+                    error_msg = f"API错误 {response.status_code}: {error_data}"
+                except:
+                    error_msg = f"API错误 {response.status_code}: {error_detail}"
+
+                return self._create_error_response(error_msg)
+
+            # 解析成功响应
             result = response.json()
+            print(f"✅ API响应解析成功")
+
             processed_result = self._process_results(result, query, intent_type, location)
 
-            # Save to database and cache
-            self._save_search_data(query, intent_type, location, processed_result)
+            # 保存到数据库
+            self._save_search_data(processed_result)
 
-            print(f"✅ Serper search successful, returned {len(processed_result.get('organic', []))} results")
+            print(f"✅ Serper搜索成功，返回 {len(processed_result.get('organic', []))} 条结果")
             return processed_result
 
         except requests.exceptions.RequestException as e:
-            error_msg = f"Serper API request error: {e}"
+            error_msg = f"Serper API请求错误: {e}"
             print(f"❌ {error_msg}")
             return self._create_error_response(error_msg)
         except Exception as e:
-            error_msg = f"Serper search exception: {e}"
+            error_msg = f"Serper搜索异常: {e}"
             print(f"❌ {error_msg}")
             return self._create_error_response(error_msg)
 
     def _create_error_response(self, error_message: str) -> Dict[str, Any]:
-        """Create error response"""
+        """创建错误响应"""
         return {
             "error": error_message,
             "organic": [],
@@ -65,27 +95,25 @@ class SerperAPI:
             "success": False
         }
 
-    def _save_search_data(self, query: str, intent_type: str, location: str, search_results: Dict[str, Any]):
-        """Save search data to database and cache"""
+    def _save_search_data(self, search_results: Dict[str, Any]):
+        """保存搜索数据到数据库"""
         try:
-            # Prepare data for saving
+            # 准备保存数据
             save_data = {
-                "query": query,
-                "intent_type": intent_type,
-                "location": location,
-                "search_results": search_results,
+                "query": search_results.get("query", ""),
+                "intent_type": search_results.get("intent_type", "general"),
+                "location": search_results.get("location", ""),
+                "search_results": search_results,  # 保存整个处理后的结果
                 "result_count": len(search_results.get("organic", [])),
                 "search_timestamp": search_results.get("search_timestamp")
             }
 
-            # Save to database
+            # 保存到数据库
             save_search_result(save_data)
-
-            # Save to cache
-            save_to_cache(query, intent_type, location, search_results)
+            print(f"💾 搜索记录已保存到数据库: {save_data['query']}")
 
         except Exception as e:
-            print(f"⚠️ Failed to save search data: {e}")
+            print(f"⚠️ 保存搜索数据失败: {e}")
 
     def search_by_intent(self, intent_type: str, location: str, **kwargs) -> Dict[str, Any]:
         """
@@ -96,6 +124,11 @@ class SerperAPI:
             location: Location name
             **kwargs: Additional parameters
         """
+        print(f"🎯 开始意图搜索:")
+        print(f"  - 意图类型: {intent_type}")
+        print(f"  - 地点: {location}")
+        print(f"  - 额外参数: {kwargs}")
+
         intent_handlers = {
             "general": self._handle_general_search,
             "attractions": self._handle_attractions_search,
@@ -110,11 +143,15 @@ class SerperAPI:
         }
 
         handler = intent_handlers.get(intent_type, self._handle_general_search)
-        return handler(location, **kwargs)
+        print(f"  - 使用处理器: {handler.__name__}")
+
+        result = handler(location, **kwargs)
+        return result
 
     def _handle_general_search(self, location: str, **kwargs) -> Dict[str, Any]:
         """Handle general search"""
         query = kwargs.get('query', f"{location} travel information guide")
+        print(f"🔍 生成通用查询: {query}")
         return self.search(query, intent_type="general", location=location)
 
     def _handle_attractions_search(self, location: str, **kwargs) -> Dict[str, Any]:
@@ -127,6 +164,7 @@ class SerperAPI:
         else:
             query = f"{location} {query_suffix}"
 
+        print(f"🏯 生成景点查询: {query}")
         return self.search(query, num_results=15, intent_type="attractions", location=location)
 
     def _handle_restaurants_search(self, location: str, **kwargs) -> Dict[str, Any]:
@@ -143,6 +181,7 @@ class SerperAPI:
             query_parts.append("local food popular")
 
         query = " ".join(query_parts)
+        print(f"🍣 生成餐厅查询: {query}")
         return self.search(query, num_results=12, intent_type="restaurants", location=location)
 
     def _handle_travel_guides_search(self, location: str, **kwargs) -> Dict[str, Any]:
@@ -152,6 +191,7 @@ class SerperAPI:
             query = f"{location} {days} days travel itinerary guide plan"
         else:
             query = f"{location} travel guide itinerary things to do"
+        print(f"🗺️ 生成攻略查询: {query}")
         return self.search(query, num_results=10, intent_type="guides", location=location)
 
     def _handle_seasonal_info_search(self, location: str, **kwargs) -> Dict[str, Any]:
@@ -166,11 +206,13 @@ class SerperAPI:
         else:
             query = f"{location} best time to visit seasonal events festivals"
 
+        print(f"🌸 生成季节信息查询: {query}")
         return self.search(query, num_results=8, intent_type="seasonal", location=location)
 
     def _handle_transportation_search(self, location: str, **kwargs) -> Dict[str, Any]:
         """Handle transportation search"""
         query = f"{location} transportation how to get around public transport"
+        print(f"🚇 生成交通查询: {query}")
         return self.search(query, num_results=8, intent_type="transportation", location=location)
 
     def _handle_accommodation_search(self, location: str, **kwargs) -> Dict[str, Any]:
@@ -180,24 +222,29 @@ class SerperAPI:
             query = f"{location} {area} best hotels accommodation where to stay"
         else:
             query = f"{location} best areas to stay hotels accommodation"
+        print(f"🏨 生成住宿查询: {query}")
         return self.search(query, num_results=10, intent_type="accommodation", location=location)
 
     def _handle_cultural_info_search(self, location: str, **kwargs) -> Dict[str, Any]:
         """Handle cultural information search"""
         query = f"{location} culture customs etiquette local traditions"
+        print(f"🎎 生成文化查询: {query}")
         return self.search(query, num_results=8, intent_type="culture", location=location)
 
     def _handle_shopping_search(self, location: str, **kwargs) -> Dict[str, Any]:
         """Handle shopping search"""
         query = f"{location} shopping best places to shop markets malls"
+        print(f"🛍️ 生成购物查询: {query}")
         return self.search(query, num_results=8, intent_type="shopping", location=location)
 
     def _handle_nightlife_search(self, location: str, **kwargs) -> Dict[str, Any]:
         """Handle nightlife search"""
         query = f"{location} nightlife bars clubs entertainment"
+        print(f"🌃 生成夜生活查询: {query}")
         return self.search(query, num_results=6, intent_type="nightlife", location=location)
 
-    def _process_results(self, raw_data: Dict[str, Any], query: str, intent_type: str, location: str = "") -> Dict[str, Any]:
+    def _process_results(self, raw_data: Dict[str, Any], query: str, intent_type: str, location: str = "") -> Dict[
+        str, Any]:
         """Process search results"""
         processed = {
             "success": True,

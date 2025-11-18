@@ -213,25 +213,6 @@ class SearchHistory(Base):
         }
 
 
-class CachedSearchData(Base):
-    __tablename__ = 'cached_search_data'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-    # 缓存键
-    query_hash = Column(String(64), unique=True, nullable=False)
-    intent_type = Column(String(50), nullable=False)
-    location = Column(String(100), nullable=False)
-
-    # 缓存数据
-    search_data = Column(JSON, nullable=False)
-
-    # 时间信息
-    expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    def is_expired(self):
-        return datetime.utcnow() > self.expires_at
 
 
 
