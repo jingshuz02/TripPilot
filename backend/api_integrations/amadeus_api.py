@@ -1,5 +1,5 @@
 import requests
-import json
+from datetime import date
 from typing import Dict, Any, List
 from backend.database.operations import FlightOperations
 from backend.database.operations import HotelOperations
@@ -82,7 +82,7 @@ class AmadeusTravelService:
             "maxPrice": search_params.get('max_price'),  # 最高价格
             "travelClass": search_params.get('travel_class', 'ECONOMY'),
             "nonStop": str(search_params.get('non_stop', True)).lower(),
-            "max": search_params.get('max_results', 5)
+            "max": search_params.get('max_results', 10)
         }
 
         # 移除值为None的参数，避免API调用出错
@@ -129,7 +129,7 @@ class AmadeusTravelService:
             # 步骤1: 搜索酒店基本信息
             print("🏨 步骤1: 搜索酒店基本信息...")
             hotel_data = self._call_hotels_api(search_params)
-
+            
             if 'error' in hotel_data:
                 return {"success": False, "error": hotel_data['error']}
 
@@ -249,11 +249,11 @@ class AmadeusTravelService:
     def _call_hotel_offers_api(self, hotel_ids: str, search_params: Dict[str, Any]) -> Dict[str, Any]:
         """调用酒店报价API"""
         endpoint = f"{self.base_url}/v3/shopping/hotel-offers"
-
+        today = date.today().strftime('%Y-%m-%d')
         params = {
             "hotelIds": hotel_ids,
             "adults": search_params.get('adults', 1),
-            "checkInDate": search_params.get('check_in_date'),
+            "checkInDate": search_params.get('check_in_date', today),
             "checkOutDate": search_params.get('check_out_date'),
             "roomQuantity": search_params.get('room_quantity', 1),
             "countryOfResidence": search_params.get('country_of_residence'),

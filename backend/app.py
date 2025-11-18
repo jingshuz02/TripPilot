@@ -277,27 +277,6 @@ def search_endpoint():
         }), 500
 
 
-@app.route('/api/search/history', methods=['GET'])
-def get_search_history_endpoint():
-    """
-    获取搜索历史记录
-    """
-    try:
-        limit = request.args.get('limit', 10, type=int)
-        history = get_search_history(limit=limit)
-
-        return jsonify({
-            "success": True,
-            "data": history
-        })
-
-    except Exception as e:
-        print(f"❌ 获取搜索历史失败: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
 
 
 if __name__ == '__main__':
