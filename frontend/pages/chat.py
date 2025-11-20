@@ -1,325 +1,604 @@
+"""
+改进版聊天页面 - 修复导入路径和多对话功能
+智能展示各类数据，支持详情查看和筛选
+"""
+
+import streamlit as st
+from datetime import datetime
 import sys
 import os
-# 将项目根目录添加到 python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-import streamlit as st
-from datetime import datetime, timedelta
-from uuid import uuid4
+import requests
 
-from frontend.components.weather_widget import display_weather
-from frontend.components.hotel_card import display_hotel_card
-from frontend.components.flight_card import display_flight_card, display_flight_details_modal
+# 修复导入路径问题
+# 添加项目根目录到Python路径
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# --------------- 初始化全局状态 (保持原样，防止数据丢失) ---------------
-# 初始化API客户端
-if "api_client" not in st.session_state:
-#try:
-    from api_client import APIClient
-    st.session_state.api_client = APIClient()
-    # except ImportError:
-    #     # 模拟一个假的 Client
-    #     class MockClient:
-    #         def check_health(self): return True
-    #         def chat(self, **kwargs): 
-    #             return {
-    #                 "action": "suggestion", 
-    #                 "content": "Mock响应：后端未连接，请检查 api_client.py",
-    #                 "data": {}
-    #             }
-    #     st.session_state.api_client = MockClient()
+# 现在使用相对导入
+try:
+    # 尝试从components导入
+    from components.hotel_card import display_hotel_card
+    from components.flight_card import display_flight_card
+except ImportError:
+    # 如果components不存在，使用内置函数
+    st.warning("组件文件未找到，使用内置显示功能")
 
-# 初始化多对话存储
-if "conversations" not in st.session_state:
-    st.session_state.conversations = {
-        "conv_0": {
-            "messages": [],
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-        }
-    }
-if "active_conv_id" not in st.session_state:
-    st.session_state.active_conv_id = "conv_0"
+    def display_hotel_card(hotel, key_prefix="hotel"):
+        """内置的酒店卡片显示函数"""
+        with st.container(border=True):
+            st.subheader(hotel.get('name', 'Unknown Hotel'))
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.write(f"📍 {hotel.get('location', 'N/A')}")
+                st.write(f"⭐ {hotel.get('rating', 'N/A')}/5")
+            with col2:
+                st.write(f"💰 ¥{hotel.get('price', 0)}/晚")
+            with col3:
+                if st.button("选择", key=f"{key_prefix}_select"):
+                    return "book"
+        return None
 
-# 初始化订单和行程数据
-if "orders" not in st.session_state:
-    st.session_state.orders = []
-if "trips" not in st.session_state:
-    st.session_state.trips = [{
-        "name": "Default Trip",
-        "id": str(uuid4())[:8],
-        "created_at": datetime.now().strftime("%Y-%m-%d")
-    }]
-if "budget" not in st.session_state:
-    st.session_state.budget = 1000  # 恢复默认1000
+    def display_flight_card(flight_data, key_prefix="flight"):
+        """内置的航班卡片显示函数"""
+        with st.container(border=True):
+            flight_num = f"{flight_data.get('carrier_code', 'XX')}{flight_data.get('flight_number', '000')}"
+            st.subheader(flight_num)
 
-# 初始化API连接状态
-if "api_connected" not in st.session_state:
-    st.session_state.api_connected = getattr(st.session_state.api_client, 'check_health', lambda: False)()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.write(f"🛫 {flight_data.get('departure', 'N/A')}")
+                st.write(f"🛬 {flight_data.get('arrival', 'N/A')}")
+            with col2:
+                st.write(f"⏱️ {flight_data.get('duration', 'N/A')}")
+            with col3:
+                st.write(f"💰 ¥{flight_data.get('total_price', 0)}")
+                if st.button("选择", key=f"{key_prefix}_select"):
+                    return "book"
+        return None
 
-# 确保当前对话的消息列表存在
-current_conv = st.session_state.conversations[st.session_state.active_conv_id]
-if "messages" not in current_conv:
-    current_conv["messages"] = []
+try:
+    from weather_widget import display_weather_compact, get_mock_weather_data
+except ImportError:
+    def display_weather_compact(weather_data, city_name="城市", forecast_days=3):
+        """简单的天气显示"""
+        st.info(f"{city_name}: {weather_data.get('temperature', 20)}°C")
 
-# --------------- 辅助函数：处理预订 (保持原样) ---------------
-def handle_booking(item_type, item_data, price):
-    order_id = str(uuid4())[:8]
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
-    # 获取当前活跃的对话 ID
-    current_conv_id = st.session_state.get("active_conv_id", "conv_0")
-    
-    new_order = {
-        "id": order_id,
+    def get_mock_weather_data(city_name="城市"):
+        """模拟天气数据"""
+        return {'temperature': 20, 'description': '晴', 'humidity': 60}
+
+# ==================== 辅助函数定义 ====================
+
+def calculate_nights(start_date, end_date):
+    """计算晚数"""
+    try:
+        if isinstance(start_date, str):
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+        else:
+            start = start_date
+
+        if isinstance(end_date, str):
+            end = datetime.strptime(end_date, "%Y-%m-%d")
+        else:
+            end = end_date
+
+        return max((end - start).days, 1)
+    except:
+        return 1
+
+def call_backend_api(prompt, preferences):
+    """直接调用后端API"""
+    try:
+        response = requests.post(
+            "http://localhost:5000/api/chat",
+            json={
+                "prompt": prompt,
+                "preferences": preferences
+            },
+            timeout=30
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"API调用失败: {e}")
+    return None
+
+def show_hotel_details(hotel):
+    """显示酒店详情"""
+    st.write(f"**地址**: {hotel.get('address', 'N/A')}")
+    st.write(f"**电话**: {hotel.get('tel', 'N/A')}")
+    st.write(f"**评分**: {hotel.get('rating', 'N/A')}/5")
+
+    st.markdown("**设施服务**")
+    amenities = hotel.get('amenities', [])
+    if amenities:
+        cols = st.columns(3)
+        for idx, amenity in enumerate(amenities):
+            with cols[idx % 3]:
+                st.write(f"✓ {amenity}")
+
+    st.markdown("**价格信息**")
+    st.write(f"每晚: ¥{hotel.get('price', 0)}")
+    nights = calculate_nights(
+        st.session_state.get('start_date', '2025-01-01'),
+        st.session_state.get('end_date', '2025-01-02')
+    )
+    st.write(f"总价 ({nights}晚): ¥{hotel.get('price', 0) * nights}")
+
+def add_to_selected(item, item_type):
+    """添加到已选择列表"""
+    selected_item = {
+        "name": item.get('name', item.get('flight_number', 'Unknown')),
         "type": item_type,
-        "item": item_data,
-        "price": price,
-        "time": timestamp,
-        "status": "已确认",
-        "conversation_id": current_conv_id 
+        "price": item.get('price', item.get('total_price', 0)),
+        "data": item
     }
-    
-    # 确保全局订单列表存在
-    if "orders" not in st.session_state:
-        st.session_state.orders = []
-        
-    st.session_state.orders.append(new_order)
-    st.toast(f"✅ 预订成功！(关联对话: {current_conv_id})", icon="🎉")
 
-@st.dialog("航班详情")
-def show_flight_details_dialog(flight):
-    # 优先使用 flight 数据里的 amenities，如果没有则使用原来的模拟数据
-    amenities = flight.get("amenities", [])
-    if not amenities:
-        amenities = [
-            {"service": "机上餐饮", "is_chargeable": False},
-            {"service": "Wi-Fi", "is_chargeable": True},
-            {"service": "USB充电", "is_chargeable": False}
-        ]
-    display_flight_details_modal(flight, amenities)
+    if selected_item not in st.session_state.selected_items:
+        st.session_state.selected_items.append(selected_item)
 
-# --------------- 页面配置 ---------------
+def display_weather_info(weather_data):
+    """显示天气信息"""
+    if isinstance(weather_data, dict):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("温度", f"{weather_data.get('temperature', 'N/A')}°C")
+        with col2:
+            st.metric("天气", weather_data.get('description', weather_data.get('weather', 'N/A')))
+        with col3:
+            st.metric("湿度", f"{weather_data.get('humidity', 'N/A')}%")
+
+def display_attractions_list(attractions):
+    """显示景点列表"""
+    st.info(f"找到 {len(attractions)} 个景点")
+
+    for idx, attr in enumerate(attractions[:10]):
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+
+            with col1:
+                st.markdown(f"**{attr.get('name', 'Unknown')}**")
+                st.write(f"📍 {attr.get('address', 'N/A')}")
+                st.write(f"⭐ {attr.get('rating', 'N/A')}")
+                st.write(f"🎫 {attr.get('price', '免费')}")
+
+            with col2:
+                if st.button("详情", key=f"attr_{idx}"):
+                    st.info(attr.get('description', '暂无描述'))
+
+def display_hotels_list(hotels):
+    """显示酒店列表"""
+    st.info(f"找到 {len(hotels)} 家酒店")
+
+    with st.expander("🔍 筛选条件"):
+        col1, col2 = st.columns(2)
+        with col1:
+            max_price = st.number_input("最高价格", value=9999, key="hotel_filter_price")
+        with col2:
+            min_rating = st.number_input("最低评分", value=0.0, key="hotel_filter_rating")
+
+    for idx, hotel in enumerate(hotels[:10]):
+        if hotel.get('price', 0) > max_price:
+            continue
+        if hotel.get('rating', 0) < min_rating:
+            continue
+
+        with st.container(border=True):
+            col1, col2, col3 = st.columns([2, 1, 1])
+
+            with col1:
+                st.markdown(f"**{hotel.get('name', 'Unknown')}**")
+                st.write(f"📍 {hotel.get('location', hotel.get('address', 'N/A'))}")
+                st.write(f"⭐ {hotel.get('rating', 'N/A')}/5")
+
+                amenities = hotel.get('amenities', [])
+                if amenities:
+                    amenities_text = " | ".join(amenities[:5])
+                    st.caption(f"设施: {amenities_text}")
+
+            with col2:
+                st.metric("价格", f"¥{hotel.get('price', 0)}/晚")
+
+            with col3:
+                if st.button("查看详情", key=f"hotel_detail_{idx}"):
+                    with st.expander(f"🏨 {hotel['name']} 详情", expanded=True):
+                        show_hotel_details(hotel)
+
+                if st.button("选择", key=f"hotel_select_{idx}", type="primary"):
+                    add_to_selected(hotel, "hotel")
+                    st.success("已添加到选择列表")
+                    st.rerun()
+
+def display_flights_list(flights):
+    """显示航班列表"""
+    st.info(f"找到 {len(flights)} 个航班")
+
+    for idx, flight in enumerate(flights[:10]):
+        with st.container(border=True):
+            carrier_code = flight.get('carrier_code', flight.get('airline', 'XX'))
+            flight_number = flight.get('flight_number', flight.get('flight_no', '000'))
+            departure_time = flight.get('departure', flight.get('departure_time', 'N/A'))
+            arrival_time = flight.get('arrival', flight.get('arrival_time', 'N/A'))
+
+            col1, col2, col3 = st.columns([2, 1, 1])
+
+            with col1:
+                st.markdown(f"**{carrier_code}{flight_number}**")
+                st.write(f"🛫 {departure_time} → 🛬 {arrival_time}")
+                st.write(f"⏱️ {flight.get('duration', 'N/A')}")
+
+            with col2:
+                st.write(f"舱位: {flight.get('cabin_class', 'ECONOMY')}")
+                st.write(f"机型: {flight.get('aircraft_code', 'N/A')}")
+
+            with col3:
+                st.metric("价格", f"¥{flight.get('total_price', flight.get('price', 0))}")
+
+                if st.button("选择", key=f"flight_select_{idx}", type="primary"):
+                    add_to_selected(flight, "flight")
+                    st.success("已添加到选择列表")
+                    st.rerun()
+
+def display_itinerary(itinerary_data):
+    """显示行程规划"""
+    if isinstance(itinerary_data, dict):
+        st.markdown("### 📅 行程规划")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("目的地", itinerary_data.get("destination", "N/A"))
+        with col2:
+            st.metric("天数", f"{itinerary_data.get('days', 0)}天")
+        with col3:
+            st.metric("预算", f"¥{itinerary_data.get('total_budget', 0)}")
+
+        daily_plans = itinerary_data.get("daily_plans", [])
+        for plan in daily_plans:
+            with st.expander(f"第 {plan.get('day', 1)} 天"):
+                st.write("**上午:**")
+                for activity in plan.get("morning", []):
+                    st.write(f"• {activity}")
+
+                st.write("**下午:**")
+                for activity in plan.get("afternoon", []):
+                    st.write(f"• {activity}")
+
+                st.write("**晚上:**")
+                for activity in plan.get("evening", []):
+                    st.write(f"• {activity}")
+
+def display_message_content(message):
+    """显示消息内容"""
+    content = message.get("content", "")
+    action = message.get("action", "")
+    data = message.get("data", [])
+
+    if content:
+        st.markdown(content)
+
+    if action == "search_hotels" and data:
+        display_hotels_list(data)
+    elif action == "search_flights" and data:
+        display_flights_list(data)
+    elif action == "get_weather" and data:
+        display_weather_info(data)
+    elif action == "search_attractions" and data:
+        display_attractions_list(data)
+    elif action == "full_planning" and data:
+        display_itinerary(data)
+
+    suggestions = message.get("suggestions", [])
+    if suggestions:
+        st.markdown("#### 💡 您可能还想了解")
+        for sug in suggestions[:3]:
+            if st.button(sug, key=f"sug_{hash(sug)}_{datetime.now().timestamp()}"):
+                current_conv = st.session_state.conversations[st.session_state.current_conversation_id]
+                current_conv["messages"].append({"role": "user", "content": sug})
+                st.rerun()
+
+# ==================== 页面配置 ====================
 st.set_page_config(
-    page_title="TripPilot - Chat",
+    page_title="TripPilot Chat",
     page_icon="💬",
     layout="wide"
 )
 
-st.title("💬 Chat with TripPilot")
+# ==================== 初始化session state ====================
+if "conversations" not in st.session_state:
+    st.session_state.conversations = {}
+    default_id = "chat_1"
+    st.session_state.conversations[default_id] = {
+        "name": "对话 1",
+        "messages": [],
+        "created_at": datetime.now().isoformat()
+    }
+    st.session_state.current_conversation_id = default_id
+    st.session_state.conversation_counter = 1
 
-# --------------- 侧边栏 (功能已恢复) ---------------
+if "api_client" not in st.session_state:
+    try:
+        from api_client import APIClient
+        st.session_state.api_client = APIClient()
+    except ImportError:
+        st.error("API客户端未找到，请确保api_client.py存在")
+
+if "current_hotels" not in st.session_state:
+    st.session_state.current_hotels = []
+if "current_flights" not in st.session_state:
+    st.session_state.current_flights = []
+if "selected_items" not in st.session_state:
+    st.session_state.selected_items = []
+if "trip_context" not in st.session_state:
+    st.session_state.trip_context = {}
+
+# 自定义CSS
+st.markdown("""
+<style>
+.main-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 20px;
+    border-radius: 10px;
+    color: white;
+    margin-bottom: 20px;
+}
+.chat-message {
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+.user-message {
+    background-color: #e3f2fd;
+    margin-left: 20%;
+}
+.assistant-message {
+    background-color: #f5f5f5;
+    margin-right: 20%;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==================== 侧边栏 ====================
 with st.sidebar:
-    # 1. 对话管理
-    st.header("🗨️ 对话管理")
-    if st.button("+ 新建对话", use_container_width=True):
-        new_conv_id = f"conv_{len(st.session_state.conversations)}"
-        st.session_state.conversations[new_conv_id] = {
+    st.markdown("### 💬 对话管理")
+
+    # 新建对话
+    if st.button("➕ 新建对话", use_container_width=True):
+        st.session_state.conversation_counter += 1
+        new_id = f"chat_{st.session_state.conversation_counter}"
+        st.session_state.conversations[new_id] = {
+            "name": f"对话 {st.session_state.conversation_counter}",
             "messages": [],
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "created_at": datetime.now().isoformat()
         }
-        st.session_state.active_conv_id = new_conv_id
+        st.session_state.current_conversation_id = new_id
         st.rerun()
-    
-    conv_options = {
-        conv_id: f"对话 {i+1} ({data['created_at']})" 
-        for i, (conv_id, data) in enumerate(st.session_state.conversations.items())
-    }
-    selected_conv_id = st.selectbox(
-        "选择对话",
-        options=list(conv_options.keys()),
-        format_func=lambda x: conv_options[x],
-        index=list(conv_options.keys()).index(st.session_state.active_conv_id)
-    )
-    if selected_conv_id != st.session_state.active_conv_id:
-        st.session_state.active_conv_id = selected_conv_id
-        st.rerun()
-    st.divider()
 
-    # 2. 旅行偏好设置 (已恢复预算输入框)
-    st.header("🎯 旅行偏好")
-    # 计算剩余预算
-    total_spent = sum(o['price'] for o in st.session_state.orders)
-    initial_budget = st.session_state.budget
-    remaining_budget = initial_budget - total_spent
-    
-    st.metric("剩余预算", f"${remaining_budget}", delta=f"-${total_spent}" if total_spent > 0 else None)
-    
-    # [恢复] 这里是你原本用来调节总预算的输入框
-    budget_input = st.number_input(
-        "总预算 (USD)",
-        min_value=0,
-        value=initial_budget,
-        step=100,
-        key="travel_budget_input"
-    )
-    if budget_input != initial_budget:
-        st.session_state.budget = budget_input
-        st.rerun()
-        
-    start_date = st.date_input(
-        "出发日期",
-        value=datetime.now(),
-        key="start_date"
-    )
-    end_date = st.date_input(
-        "返回日期",
-        value=datetime.now() + timedelta(days=3),
-        key="end_date"
-    )
-    language = st.selectbox(
-        "语言",
-        ["中文", "English", "日本語"],
-        key="language"
-    )
-    
-    travel_preferences = {
-        "budget": remaining_budget, 
-        "total_budget": initial_budget,
-        "start_date": start_date.strftime("%Y-%m-%d"),
-        "end_date": end_date.strftime("%Y-%m-%d"),
-        "language": language
-    }
-    st.divider()
+    # 对话列表
+    st.markdown("**对话列表**")
+    current_id = st.session_state.current_conversation_id
 
-    # 3. 订单记录展示 (已恢复)
-    st.header("📋 订单记录")
-    if st.session_state.orders:
-        for order in st.session_state.orders:
-            icon = "🏨" if order['type'] == 'hotel' else "✈️"
-            with st.expander(f"{icon} {order['item']} - ${order['price']}"):
-                st.caption(f"订单号: {order['id']}")
-                st.caption(f"时间: {order['time']}")
-                st.write(f"状态: **{order['status']}**")
-    else:
-        st.info("暂无订单")
-    st.divider()
+    for conv_id, conv_data in st.session_state.conversations.items():
+        col1, col2, col3 = st.columns([3, 1, 1])
 
-    # 4. 后端连接状态
-    st.header("⚙️ 连接状态")
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        if st.session_state.api_connected:
-            st.success("✅ 后端已连接")
-        else:
-            st.error("❌ 后端未连接")
-    with col2:
-        if st.button("🔄"):
-            st.session_state.api_connected = getattr(st.session_state.api_client, 'check_health', lambda: False)()
-            st.rerun()
-            
-    # 开发者工具：清空当前对话
-    if st.button("🗑️ 清空当前对话"):
-        st.session_state.conversations[st.session_state.active_conv_id]["messages"] = []
-        st.rerun()
-# --------------- 聊天内容展示逻辑 (根据新JSON重构) ---------------
-
-# 获取当前对话的消息列表
-current_conv = st.session_state.conversations[st.session_state.active_conv_id]
-messages = current_conv["messages"]
-
-# 1. 渲染历史消息
-for idx, msg in enumerate(messages):
-    with st.chat_message(msg["role"]):
-        # A. 渲染文本内容
-        # 统一使用 content 字段 (无论是 suggestion 还是 search_xxx 的附带文本)
-        content_text = msg.get("content")
-        if content_text:
-            st.markdown(content_text)
-        
-        # B. 渲染组件 (根据 action 字段)
-        action_type = msg.get("action")
-        data_payload = msg.get("data")
-        
-        # --- 渲染酒店 ---
-        if action_type == "search_hotels" and isinstance(data_payload, list):
-            st.markdown("---")
-            st.subheader("🏨 推荐酒店")
-            for i, hotel in enumerate(data_payload):
-                unique_key = f"hist_{idx}_hotel_{hotel.get('id', i)}"
-                # 调用组件
-                action = display_hotel_card(hotel, key_prefix=unique_key)
-                # 处理回调
-                if action == "book":
-                    handle_booking(
-                        "hotel", 
-                        hotel.get('name', '未知酒店'), 
-                        hotel.get('total_price', 0)
-                    )
-                    st.rerun()
-
-        # --- 渲染航班 ---
-        elif action_type == "search_flights" and isinstance(data_payload, list):
-            st.markdown("---")
-            st.subheader("✈️ 推荐航班")
-            for i, flight in enumerate(data_payload):
-                unique_key = f"hist_{idx}_flight_{flight.get('id', i)}"
-                # 调用组件
-                action = display_flight_card(flight, key_prefix=unique_key)
-                # 处理回调
-                if action == "book":
-                    handle_booking(
-                        "flight", 
-                        f"{flight.get('carrier_code')}{flight.get('flight_number')}", 
-                        flight.get('total_price', 0)
-                    )
-                    st.rerun()
-                elif action == "details":
-                    show_flight_details_dialog(flight)
-
-        # --- 渲染天气 ---
-        elif action_type == "get_weather" and isinstance(data_payload, dict):
-            st.markdown("---")
-            # 天气通常不需要循环，因为一次只查一个目的地
-            display_weather(data_payload, city_name=data_payload.get("city_name", "目的地"))
-
-
-# 2. 处理用户输入
-if prompt := st.chat_input("请输入您的旅行需求..."):
-    
-    # 记录用户消息
-    messages.append({"role": "user", "content": prompt})
-    st.rerun()
-
-# 3. 触发后端响应
-if messages and messages[-1]["role"] == "user":
-    
-    last_user_msg = messages[-1]["content"]
-    
-    with st.chat_message("assistant"):
-        with st.spinner("正在规划您的旅程..."):
-            
-            if not st.session_state.api_connected:
-                st.error("⚠️ 后端服务未连接，请先启动服务器。")
-                st.stop()
-
-            # --- 调用 API (只调用一次) ---
-            try:
-                # 发送给后端的参数
-                backend_response = st.session_state.api_client.chat(
-                    prompt=last_user_msg,
-                    preferences=travel_preferences
-                )
-                
-                # 预期后端返回格式:
-                # { 
-                #   "action": "search_flights" | "suggestion" | ..., 
-                #   "content": "文本描述...", 
-                #   "data": [...] or {...}
-                # }
-                
-                if not backend_response:
-                    st.error("后端无响应")
-                    st.stop()
-
-                # 将响应转换为消息格式
-                new_msg = backend_response.copy()
-                new_msg["role"] = "assistant"
-                
-                # 保存消息
-                messages.append(new_msg)
-                
-                # 刷新以显示结果
+        with col1:
+            prefix = "📌 " if conv_id == current_id else "  "
+            if st.button(f"{prefix}{conv_data['name']}",
+                        key=f"switch_{conv_id}",
+                        use_container_width=True):
+                st.session_state.current_conversation_id = conv_id
                 st.rerun()
 
+        with col2:
+            if st.button("✏️", key=f"edit_{conv_id}"):
+                st.session_state.edit_mode = conv_id
+                st.rerun()
+
+        with col3:
+            if st.button("🗑️", key=f"delete_{conv_id}"):
+                if len(st.session_state.conversations) > 1:
+                    del st.session_state.conversations[conv_id]
+                    if st.session_state.current_conversation_id == conv_id:
+                        st.session_state.current_conversation_id = list(st.session_state.conversations.keys())[0]
+                    st.rerun()
+                else:
+                    st.warning("至少保留一个对话")
+
+    # 编辑对话名称
+    if hasattr(st.session_state, 'edit_mode'):
+        st.markdown("---")
+        st.markdown("**重命名对话**")
+        edit_id = st.session_state.edit_mode
+        new_name = st.text_input(
+            "新名称",
+            value=st.session_state.conversations[edit_id]['name'],
+            key="rename_input"
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✓ 确定", key="confirm_rename"):
+                st.session_state.conversations[edit_id]['name'] = new_name
+                del st.session_state.edit_mode
+                st.rerun()
+        with col2:
+            if st.button("✕ 取消", key="cancel_rename"):
+                del st.session_state.edit_mode
+                st.rerun()
+
+    st.divider()
+    st.markdown("### 🎯 旅行偏好设置")
+
+    # 预算设置
+    col1, col2 = st.columns(2)
+    with col1:
+        budget = st.number_input(
+            "💰 总预算(¥)",
+            min_value=500,
+            max_value=50000,
+            value=st.session_state.get('budget', 5000),
+            step=500
+        )
+    with col2:
+        travelers = st.number_input(
+            "👥 旅行人数",
+            min_value=1,
+            max_value=10,
+            value=1
+        )
+
+    # 日期选择
+    st.markdown("📅 **旅行日期**")
+    col3, col4 = st.columns(2)
+    with col3:
+        start_date = st.date_input("开始日期", value=datetime.now().date())
+    with col4:
+        end_date = st.date_input("结束日期", value=datetime.now().date())
+
+    # 酒店偏好
+    st.markdown("🏨 **酒店偏好**")
+    hotel_requirements = st.multiselect(
+        "设施要求",
+        ["WiFi", "停车场", "游泳池", "健身房", "早餐", "商务中心"],
+        default=["WiFi"]
+    )
+
+    price_range = st.slider(
+        "价格范围(¥/晚)",
+        min_value=100,
+        max_value=3000,
+        value=(200, 1000),
+        step=100
+    )
+
+    # 保存偏好
+    preferences = {
+        "budget": budget,
+        "total_budget": budget,
+        "travelers": travelers,
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "hotel_requirements": hotel_requirements,
+        "price_range": price_range,
+        "language": "中文"
+    }
+
+    st.divider()
+
+    # 天气显示
+    st.markdown("### 🌤️ 目的地天气")
+    destination_city = st.session_state.trip_context.get("destination", "北京")
+    weather_data = get_mock_weather_data(destination_city)
+    display_weather_compact(weather_data, destination_city, forecast_days=3)
+
+    st.divider()
+
+    # 已选择项目
+    if st.session_state.selected_items:
+        st.markdown("### 🛒 已选择")
+        total_cost = 0
+        for item in st.session_state.selected_items:
+            st.write(f"• {item['name']}: ¥{item['price']}")
+            total_cost += item['price']
+        st.metric("总计", f"¥{total_cost}", f"剩余: ¥{budget - total_cost}")
+
+# ==================== 辅助函数 - 添加快速建议 ====================
+def add_quick_suggestion(suggestion):
+    """添加快速建议作为用户消息"""
+    conv_id = st.session_state.current_conversation_id
+    st.session_state.conversations[conv_id]["messages"].append({
+        "role": "user",
+        "content": suggestion
+    })
+    st.session_state.process_suggestion = True
+
+# ==================== 主聊天界面 ====================
+st.markdown("<div class='main-header'><h1>🤖 TripPilot 智能旅行助手</h1><p>我是您的专属旅行顾问！</p></div>", unsafe_allow_html=True)
+
+# 快捷建议
+st.markdown("### 💡 快速开始")
+suggestions = [
+    "🏨 上海市中心的豪华酒店",
+    "✈️ 明天北京到上海的航班",
+    "📍 规划3天杭州旅游行程",
+    "🎫 迪士尼门票价格"
+]
+
+cols = st.columns(len(suggestions))
+for idx, (col, suggestion) in enumerate(zip(cols, suggestions)):
+    with col:
+        if st.button(suggestion, key=f"sug_{idx}", use_container_width=True):
+            add_quick_suggestion(suggestion)
+            st.rerun()
+
+st.divider()
+
+# ==================== 聊天历史 ====================
+current_messages = st.session_state.conversations[st.session_state.current_conversation_id]["messages"]
+
+for message in current_messages:
+    with st.chat_message(message["role"]):
+        if message["role"] == "user":
+            st.write(message["content"])
+        else:
+            display_message_content(message)
+
+# ==================== 输入框 ====================
+# 处理快速建议
+if st.session_state.get("process_suggestion", False):
+    current_conv = st.session_state.conversations[st.session_state.current_conversation_id]
+    last_message = current_conv["messages"][-1]["content"]
+
+    with st.chat_message("assistant"):
+        with st.spinner("🤔 正在为您分析..."):
+            try:
+                if hasattr(st.session_state, 'api_client'):
+                    response = st.session_state.api_client.chat(last_message, preferences)
+                else:
+                    response = call_backend_api(last_message, preferences)
+
+                if response:
+                    current_conv["messages"].append({
+                        "role": "assistant",
+                        "content": response.get("content", ""),
+                        "action": response.get("action"),
+                        "data": response.get("data"),
+                        "suggestions": response.get("suggestions", [])
+                    })
+                    display_message_content(response)
+                else:
+                    st.error("无法获取响应，请检查后端服务是否运行")
             except Exception as e:
-                st.error(f"调用失败: {str(e)}")
-                st.stop()
+                st.error(f"发生错误: {str(e)}")
+
+    st.session_state.process_suggestion = False
+    st.rerun()
+
+# 处理聊天输入
+if prompt := st.chat_input("💬 告诉我您的需求..."):
+    current_conv = st.session_state.conversations[st.session_state.current_conversation_id]
+    current_conv["messages"].append({"role": "user", "content": prompt})
+
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    with st.chat_message("assistant"):
+        with st.spinner("🤔 正在为您分析..."):
+            try:
+                if hasattr(st.session_state, 'api_client'):
+                    response = st.session_state.api_client.chat(prompt, preferences)
+                else:
+                    response = call_backend_api(prompt, preferences)
+
+                if response:
+                    current_conv["messages"].append({
+                        "role": "assistant",
+                        "content": response.get("content", ""),
+                        "action": response.get("action"),
+                        "data": response.get("data"),
+                        "suggestions": response.get("suggestions", [])
+                    })
+                    display_message_content(response)
+                else:
+                    st.error("无法获取响应，请检查后端服务是否运行")
+            except Exception as e:
+                st.error(f"发生错误: {str(e)}")

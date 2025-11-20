@@ -1,39 +1,152 @@
+"""
+TripPilot 配置文件
+包含所有API密钥和系统配置
+"""
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from openai import OpenAI
 
 
 class Config:
-    # DeepSeek Configuration
+    """系统配置类"""
+
+    # ==================== API密钥配置 ====================
+
+    # 高德地图API（已配置）
+    GAODE_API_KEY = "33b713c72bf676bdbf300951b0f238ce"
+
+    # DeepSeek API（需要你自己的密钥）
     DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', 'sk-08493e83ce83432ea0d142f39b794ddf')
-    DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
-    DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
+    DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+    DEEPSEEK_MODEL = "deepseek-chat"
 
-    # Travel APIs
-    BOOKING_API_KEY = os.getenv('BOOKING_API_KEY')
-    SKYSCANNER_API_KEY = os.getenv('SKYSCANNER_API_KEY')
-    TRIPADVISOR_API_KEY = os.getenv('TRIPADVISOR_API_KEY')
+    # Amadeus API（可选，用于真实航班/酒店数据）
+    # 注意：这是测试环境，数据有限！生产环境需要付费
+    AMADEUS_CLIENT_ID = os.getenv('AMADEUS_CLIENT_ID', '6VI59RCfSUaykDxeRa5GSO6arTqdAqGl')
+    AMADEUS_CLIENT_SECRET = os.getenv('AMADEUS_CLIENT_SECRET', 'gAiUpG7C6UJbsndp')
+    AMADEUS_TEST_MODE = True  # True=测试环境(免费但数据少), False=生产环境(付费)
 
-    # Map APIs
-    GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
-    GAODE_API_KEY = os.getenv('GAODE_API_KEY')
+    # ==================== 系统配置 ====================
 
-    # Search API
-    SERPER_API_KEY = os.getenv('SERPER_API_KEY')
+    # 是否使用模拟数据（当API失败时）
+    USE_MOCK_DATA_ON_FAILURE = True
 
-    # Database
-    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///database/trippilot.db')
+    # 是否优先使用AI生成（推荐）
+    PREFER_AI_GENERATION = True
 
-    # Flask Configuration
-    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-    DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
+    # Flask后端配置
+    FLASK_BACKEND_URL = "http://localhost:5000"
+
+    # ==================== 城市坐标映射 ====================
+    CITY_COORDINATES = {
+        # 中国城市
+        '北京': (39.9042, 116.4074),
+        '上海': (31.2304, 121.4737),
+        '广州': (23.1291, 113.2644),
+        '深圳': (22.5431, 114.0579),
+        '香港': (22.3193, 114.1694),
+        '成都': (30.5728, 104.0668),
+        '杭州': (30.2741, 120.1551),
+        '西安': (34.3416, 108.9398),
+        '武汉': (30.5928, 114.3055),
+        '重庆': (29.5630, 106.5516),
+
+        # 日本城市
+        '东京': (35.6762, 139.6503),
+        'Tokyo': (35.6762, 139.6503),
+        '大阪': (34.6937, 135.5023),
+        'Osaka': (34.6937, 135.5023),
+        '京都': (35.0116, 135.7681),
+        'Kyoto': (35.0116, 135.7681),
+        '名古屋': (35.1815, 136.9066),
+        '札幌': (43.0642, 141.3469),
+        '福冈': (33.5904, 130.4017),
+
+        # 韩国城市
+        '首尔': (37.5665, 126.9780),
+        'Seoul': (37.5665, 126.9780),
+        '釜山': (35.1796, 129.0756),
+
+        # 东南亚城市
+        '新加坡': (1.3521, 103.8198),
+        'Singapore': (1.3521, 103.8198),
+        '曼谷': (13.7563, 100.5018),
+        'Bangkok': (13.7563, 100.5018),
+        '吉隆坡': (3.1390, 101.6869),
+        '巴厘岛': (-8.4095, 115.1889),
+
+        # 欧美城市
+        '纽约': (40.7128, -74.0060),
+        'New York': (40.7128, -74.0060),
+        '伦敦': (51.5074, -0.1278),
+        'London': (51.5074, -0.1278),
+        '巴黎': (48.8566, 2.3522),
+        'Paris': (48.8566, 2.3522),
+        '洛杉矶': (34.0522, -118.2437),
+        '旧金山': (37.7749, -122.4194),
+    }
+
+    # ==================== 机场代码映射 ====================
+    AIRPORT_CODES = {
+        # 中国机场
+        '北京': 'PEK',
+        '北京首都': 'PEK',
+        '北京大兴': 'PKX',
+        '上海': 'PVG',
+        '上海浦东': 'PVG',
+        '上海虹桥': 'SHA',
+        '广州': 'CAN',
+        '深圳': 'SZX',
+        '香港': 'HKG',
+        '成都': 'CTU',
+        '杭州': 'HGH',
+        '西安': 'XIY',
+        '武汉': 'WUH',
+        '重庆': 'CKG',
+
+        # 日本机场
+        '东京': 'NRT',
+        'Tokyo': 'NRT',
+        '东京成田': 'NRT',
+        '东京羽田': 'HND',
+        '大阪': 'KIX',
+        'Osaka': 'KIX',
+        '大阪关西': 'KIX',
+        '京都': 'KIX',  # 京都用大阪机场
+        '名古屋': 'NGO',
+
+        # 其他亚洲机场
+        '首尔': 'ICN',
+        'Seoul': 'ICN',
+        '新加坡': 'SIN',
+        'Singapore': 'SIN',
+        '曼谷': 'BKK',
+        'Bangkok': 'BKK',
+
+        # 欧美机场
+        '纽约': 'JFK',
+        'New York': 'JFK',
+        '伦敦': 'LHR',
+        'London': 'LHR',
+        '巴黎': 'CDG',
+        'Paris': 'CDG',
+        '洛杉矶': 'LAX',
+        '旧金山': 'SFO',
+    }
 
     @classmethod
     def get_deepseek_client(cls):
-        """Return configured DeepSeek client"""
-        from openai import OpenAI
+        """获取DeepSeek客户端"""
         return OpenAI(
             api_key=cls.DEEPSEEK_API_KEY,
             base_url=cls.DEEPSEEK_BASE_URL
         )
+
+    @classmethod
+    def get_city_coordinates(cls, city: str) -> tuple:
+        """获取城市坐标"""
+        return cls.CITY_COORDINATES.get(city, (39.9042, 116.4074))  # 默认北京
+
+    @classmethod
+    def get_airport_code(cls, city: str) -> str:
+        """获取机场代码"""
+        return cls.AIRPORT_CODES.get(city, 'PEK')  # 默认北京首都机场

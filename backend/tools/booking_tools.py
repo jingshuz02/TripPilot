@@ -1,275 +1,242 @@
 """
-预订工具 - 航班、酒店搜索和预订
-注: 目前使用模拟数据，等待Amadeus API集成
-"""
-from datetime import datetime, timedelta
-import random
-import sys
-import os
+预订工具 - 封装Amadeus API
+为Agent提供简单的预订接口
 
-# 添加项目根目录到路径
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+"""
+from backend.booking import AmadeusService
+from config.config import Config
 
 
 class BookingTool:
-    """预订工具类 - 航班和酒店"""
+    """
+    预订工具类
+    封装航班和酒店搜索功能，提供给Agent使用
+    """
 
-    def __init__(self, base_url="http://localhost:5000"):
-        """
-        初始化预订工具
+    def __init__(self):
+        """初始化预订工具"""
+        # 初始化DeepSeek客户端（用于AI增强）
+        self.deepseek_client = Config.get_deepseek_client()
 
-        Args:
-            base_url: Flask后端地址
-        """
-        self.base_url = base_url
+        # 创建Amadeus服务
+        self.amadeus = AmadeusService(self.deepseek_client)
 
-        # 模拟航空公司
-        self.airlines = ["国航", "东航", "南航", "日航", "全日空", "港龙航空"]
+        print("✅ 预订工具初始化完成")
 
-        # 模拟酒店数据
-        self.mock_hotels = {
-            "东京": [
-                {
-                    "name": "东京帝国酒店",
-                    "rating": 4.8,
-                    "price_per_night": 2500,
-                    "amenities": ["免费WiFi", "健身房", "游泳池", "餐厅"],
-                    "location": "银座",
-                    "description": "位于市中心的豪华酒店"
-                },
-                {
-                    "name": "浅草寺商务酒店",
-                    "rating": 4.3,
-                    "price_per_night": 800,
-                    "amenities": ["免费WiFi", "早餐"],
-                    "location": "浅草",
-                    "description": "性价比高，靠近浅草寺"
-                },
-                {
-                    "name": "新宿现代酒店",
-                    "rating": 4.5,
-                    "price_per_night": 1200,
-                    "amenities": ["免费WiFi", "健身房", "餐厅"],
-                    "location": "新宿",
-                    "description": "交通便利，购物方便"
-                }
-            ],
-            "北京": [
-                {
-                    "name": "北京王府半岛酒店",
-                    "rating": 4.9,
-                    "price_per_night": 2000,
-                    "amenities": ["免费WiFi", "健身房", "游泳池", "餐厅", "水疗"],
-                    "location": "王府井",
-                    "description": "豪华五星级酒店"
-                },
-                {
-                    "name": "如家快捷酒店",
-                    "rating": 4.0,
-                    "price_per_night": 300,
-                    "amenities": ["免费WiFi"],
-                    "location": "国贸",
-                    "description": "经济型连锁酒店"
-                }
-            ]
-        }
+    # ==================== 航班搜索 ====================
 
-    def search_flights(self, origin: str, destination: str, date: str,
-                      passengers: int = 1) -> list:
+    def search_flights(self, origin: str, destination: str, date: str, **kwargs) -> dict:
         """
         搜索航班
 
         Args:
-            origin: 出发地（城市名或机场代码）
-            destination: 目的地
-            date: 出发日期 (YYYY-MM-DD)
-            passengers: 乘客数量
+            origin: 出发地IATA代码（如'HKG'）
+            destination: 目的地IATA代码（如'NRT'）
+            date: 出发日期（YYYY-MM-DD格式）
+            **kwargs: 其他可选参数
+                - adults: 成人数量，默认1
+                - travel_class: 舱位（ECONOMY/BUSINESS/FIRST），默认ECONOMY
+                - non_stop: 是否只要直飞，默认True
+                - max_results: 最多返回几个结果，默认10
 
         Returns:
-            航班列表
-        """
-        # TODO: 等待Junjie实现Amadeus API后替换
-
-        # 生成3-5个模拟航班
-        flights = []
-        num_flights = random.randint(3, 5)
-
-        for i in range(num_flights):
-            # 随机生成时间
-            hour = random.randint(6, 22)
-            minute = random.choice([0, 30])
-            departure_time = f"{hour:02d}:{minute:02d}"
-
-            # 随机飞行时长（2-6小时）
-            duration = random.randint(120, 360)
-            arrival_hour = (hour + duration // 60) % 24
-            arrival_minute = (minute + duration % 60) % 60
-            arrival_time = f"{arrival_hour:02d}:{arrival_minute:02d}"
-
-            # 随机价格
-            base_price = random.randint(800, 3000)
-
-            flight = {
-                'id': f'FL{random.randint(1000, 9999)}',
-                'airline': random.choice(self.airlines),
-                'flight_number': f'{random.choice(["CA", "MU", "CZ", "JL", "NH"])}{random.randint(100, 999)}',
-                'origin': origin,
-                'destination': destination,
-                'date': date,
-                'departure_time': departure_time,
-                'arrival_time': arrival_time,
-                'duration': f'{duration // 60}小时{duration % 60}分钟',
-                'price': base_price * passengers,
-                'currency': 'CNY',
-                'seats_available': random.randint(5, 50),
-                'class': 'Economy'
+            {
+                'success': True/False,
+                'data': [...],      # 航班列表
+                'count': 5,         # 找到的航班数
+                'message': '找到5个航班'
             }
 
-            flights.append(flight)
-
-        # 按价格排序
-        flights.sort(key=lambda x: x['price'])
-
-        return flights
-
-    def search_hotels(self, city: str, check_in: str, check_out: str,
-                     budget: float = None) -> list:
+        Example:
+            >>> tool = BookingTool()
+            >>> result = tool.search_flights('HKG', 'NRT', '2025-12-01')
+            >>> if result['success']:
+            >>>     print(f"找到 {result['count']} 个航班")
+            >>>     for flight in result['data']:
+            >>>         print(f"价格: ${flight['price']['total']}")
         """
-        搜索酒店
+        params = {
+            'origin': origin,
+            'destination': destination,
+            'departure_date': date,
+            'adults': kwargs.get('adults', 1),
+            'travel_class': kwargs.get('travel_class', 'ECONOMY'),
+            'non_stop': kwargs.get('non_stop', True),
+            'max_results': kwargs.get('max_results', 10)
+        }
+
+        return self.amadeus.search_flights(params)
+
+    # ==================== 酒店搜索 ====================
+
+    def search_hotels(self, latitude: float, longitude: float,
+                     check_in: str, check_out: str, **kwargs) -> dict:
+        """
+        搜索酒店（通过经纬度）
 
         Args:
-            city: 城市名称
-            check_in: 入住日期 (YYYY-MM-DD)
-            check_out: 退房日期 (YYYY-MM-DD)
-            budget: 预算（每晚，可选）
+            latitude: 纬度
+            longitude: 经度
+            check_in: 入住日期（YYYY-MM-DD格式）
+            check_out: 退房日期（YYYY-MM-DD格式）
+            **kwargs: 其他可选参数
+                - radius: 搜索半径（公里），默认5
+                - adults: 成人数量，默认2
 
         Returns:
-            酒店列表
+            {
+                'success': True/False,
+                'hotels': [...],        # 酒店基本信息
+                'offers': [...],        # 房间报价
+                'reviews': [...],       # 酒店评价
+                'count': 12,            # 找到的酒店数
+                'ai_enhanced': True,    # 是否使用了AI增强
+                'message': '找到12个酒店'
+            }
+
+        Example:
+            >>> tool = BookingTool()
+            >>> result = tool.search_hotels(
+            ...     latitude=35.6762,
+            ...     longitude=139.6503,
+            ...     check_in='2025-12-01',
+            ...     check_out='2025-12-05'
+            ... )
+            >>> if result['success']:
+            >>>     print(result['message'])
+            >>>     for hotel in result['hotels']:
+            >>>         print(f"酒店: {hotel['name']}")
         """
-        # TODO: 等待Junjie实现Amadeus API后替换
+        params = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'check_in_date': check_in,
+            'check_out_date': check_out,
+            'radius': kwargs.get('radius', 5),
+            'adults': kwargs.get('adults', 2)
+        }
 
-        hotels = []
+        return self.amadeus.search_hotels(params)
 
-        # 尝试从模拟数据中查找
-        mock_data = []
-        for key in self.mock_hotels.keys():
-            if key in city or city in key:
-                mock_data = self.mock_hotels[key]
-                break
+    def search_hotels_by_city(self, city: str, check_in: str, check_out: str, **kwargs) -> dict:
+        """
+        搜索酒店（通过城市名）
 
-        # 如果没找到，生成默认数据
-        if not mock_data:
-            mock_data = [
-                {
-                    "name": f"{city}中心酒店",
-                    "rating": 4.0,
-                    "price_per_night": 800,
-                    "amenities": ["免费WiFi", "早餐"],
-                    "location": "市中心",
-                    "description": f"位于{city}的酒店"
+        Args:
+            city: 城市名（中文或英文，如'东京'或'Tokyo'）
+            check_in: 入住日期（YYYY-MM-DD格式）
+            check_out: 退房日期（YYYY-MM-DD格式）
+            **kwargs: 其他可选参数（同search_hotels）
+
+        Returns:
+            同search_hotels的返回格式
+
+        Example:
+            >>> tool = BookingTool()
+            >>> result = tool.search_hotels_by_city('东京', '2025-12-01', '2025-12-05')
+        """
+        # 城市坐标映射表
+        CITY_COORDS = {
+            # 日本
+            '东京': (35.6762, 139.6503),
+            'Tokyo': (35.6762, 139.6503),
+            '大阪': (34.6937, 135.5023),
+            'Osaka': (34.6937, 135.5023),
+            '京都': (35.0116, 135.7681),
+            'Kyoto': (35.0116, 135.7681),
+
+            # 中国
+            '北京': (39.9042, 116.4074),
+            'Beijing': (39.9042, 116.4074),
+            '上海': (31.2304, 121.4737),
+            'Shanghai': (31.2304, 121.4737),
+            '香港': (22.3193, 114.1694),
+            'Hong Kong': (22.3193, 114.1694),
+            '广州': (23.1291, 113.2644),
+            'Guangzhou': (23.1291, 113.2644),
+            '深圳': (22.5431, 114.0579),
+            'Shenzhen': (22.5431, 114.0579),
+
+            # 其他热门城市
+            '新加坡': (1.3521, 103.8198),
+            'Singapore': (1.3521, 103.8198),
+            '曼谷': (13.7563, 100.5018),
+            'Bangkok': (13.7563, 100.5018),
+            '首尔': (37.5665, 126.9780),
+            'Seoul': (37.5665, 126.9780),
+
+            # 可以继续添加更多城市...
+        }
+
+        if city in CITY_COORDS:
+            lat, lon = CITY_COORDS[city]
+            return self.search_hotels(lat, lon, check_in, check_out, **kwargs)
+        else:
+            return {
+                'success': False,
+                'hotels': [],
+                'offers': [],
+                'reviews': [],
+                'count': 0,
+                'ai_enhanced': False,
+                'message': f"未找到城市'{city}'的坐标，请使用经纬度搜索或添加该城市"
+            }
+
+    # ==================== 便捷方法 ====================
+
+    def get_flight_price(self, origin: str, destination: str, date: str) -> dict:
+        """
+        快速获取航班价格（只返回最便宜的）
+
+        Returns:
+            {
+                'success': True/False,
+                'cheapest_price': 500.00,
+                'currency': 'USD',
+                'message': '最低价格: $500.00'
+            }
+        """
+        result = self.search_flights(origin, destination, date, max_results=5)
+
+        if result['success'] and result['data']:
+            prices = [float(f['price']['total']) for f in result['data'] if 'price' in f]
+            if prices:
+                cheapest = min(prices)
+                return {
+                    'success': True,
+                    'cheapest_price': cheapest,
+                    'currency': 'USD',
+                    'message': f"最低价格: ${cheapest:.2f}"
                 }
-            ]
 
-        # 计算住宿天数
-        try:
-            check_in_date = datetime.strptime(check_in, "%Y-%m-%d")
-            check_out_date = datetime.strptime(check_out, "%Y-%m-%d")
-            nights = (check_out_date - check_in_date).days
-        except:
-            nights = 1
-
-        # 处理每个酒店
-        for i, hotel in enumerate(mock_data):
-            price_per_night = hotel['price_per_night']
-
-            # 如果有预算限制，跳过超预算的
-            if budget and price_per_night > budget:
-                continue
-
-            total_price = price_per_night * nights
-
-            hotels.append({
-                'id': f'HT{random.randint(1000, 9999)}',
-                'name': hotel['name'],
-                'rating': hotel['rating'],
-                'price_per_night': price_per_night,
-                'total_price': total_price,
-                'nights': nights,
-                'amenities': hotel['amenities'],
-                'location': hotel['location'],
-                'description': hotel['description'],
-                'check_in': check_in,
-                'check_out': check_out,
-                'available_rooms': random.randint(1, 10)
-            })
-
-        # 按价格排序
-        hotels.sort(key=lambda x: x['price_per_night'])
-
-        return hotels
-
-    def book_flight(self, flight_id: str, passengers: int = 1) -> dict:
-        """
-        预订航班
-
-        Args:
-            flight_id: 航班ID
-            passengers: 乘客数量
-
-        Returns:
-            预订结果
-        """
-        # TODO: 实现真实预订逻辑
         return {
-            'success': True,
-            'booking_id': f'BK{random.randint(10000, 99999)}',
-            'flight_id': flight_id,
-            'status': 'confirmed',
-            'message': '航班预订成功！预订号: BK' + str(random.randint(10000, 99999))
+            'success': False,
+            'cheapest_price': None,
+            'currency': 'USD',
+            'message': '未找到价格信息'
         }
 
-    def book_hotel(self, hotel_id: str, rooms: int = 1) -> dict:
+    def get_hotel_count(self, city: str) -> dict:
         """
-        预订酒店
-
-        Args:
-            hotel_id: 酒店ID
-            rooms: 房间数量
+        快速获取某城市的酒店数量
 
         Returns:
-            预订结果
+            {
+                'success': True/False,
+                'count': 12,
+                'message': '找到12个酒店'
+            }
         """
-        # TODO: 实现真实预订逻辑
+        from datetime import date, timedelta
+
+        # 使用明天作为入住日期
+        tomorrow = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+        checkout = (date.today() + timedelta(days=2)).strftime('%Y-%m-%d')
+
+        result = self.search_hotels_by_city(city, tomorrow, checkout)
+
         return {
-            'success': True,
-            'booking_id': f'BK{random.randint(10000, 99999)}',
-            'hotel_id': hotel_id,
-            'status': 'confirmed',
-            'message': '酒店预订成功！预订号: BK' + str(random.randint(10000, 99999))
+            'success': result['success'],
+            'count': result['count'],
+            'message': result['message']
         }
-
-
-# 测试代码
-if __name__ == "__main__":
-    tool = BookingTool()
-
-    print("=" * 50)
-    print("测试预订工具")
-    print("=" * 50)
-
-    # 测试航班搜索
-    print("\n1. 搜索航班（北京 → 东京）:")
-    flights = tool.search_flights("北京", "东京", "2024-12-01", passengers=1)
-    for flight in flights[:3]:
-        print(f"  ✈️  {flight['airline']} {flight['flight_number']}")
-        print(f"     {flight['departure_time']} → {flight['arrival_time']}")
-        print(f"     价格: ¥{flight['price']}\n")
-
-    # 测试酒店搜索
-    print("2. 搜索酒店（东京，3晚）:")
-    hotels = tool.search_hotels("东京", "2024-12-01", "2024-12-04")
-    for hotel in hotels[:3]:
-        print(f"  🏨 {hotel['name']}")
-        print(f"     评分: {hotel['rating']}/5.0")
-        print(f"     价格: ¥{hotel['price_per_night']}/晚 (共¥{hotel['total_price']})")
-        print(f"     设施: {', '.join(hotel['amenities'])}\n")
