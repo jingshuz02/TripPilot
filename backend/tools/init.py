@@ -1,6 +1,6 @@
 """
 TripPilot Tools Module
-工具模块 - 封装各种API调用
+Tool module - encapsulates various API calls
 """
 
 from .weather_tools import WeatherTool

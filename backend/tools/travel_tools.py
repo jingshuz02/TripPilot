@@ -1,6 +1,709 @@
+# """
+# 改进版 TravelTools - 旅行工具类
+# 修复航班数据问题，增强酒店筛选功能
+# """
+
+# import json
+# import random
+# from datetime import datetime, timedelta
+# from typing import List, Dict, Any, Optional
+# import os
+# import requests
+
+
+# class TravelTools:
+#     """
+#     旅行工具类 - 提供各种旅行相关数据
+#     改进版特性：
+#     1. 修复航班数据结构
+#     2. 增强酒店筛选
+#     3. 门票信息查询
+#     4. 完整行程规划
+#     """
+
+#     def __init__(self):
+#         """初始化工具"""
+#         # 配置API密钥
+#         self.amap_key = os.getenv('AMAP_API_KEY', '33b713c72bf676bdbf300951b0f238ce')
+#         self.deepseek_key = os.getenv('DEEPSEEK_API_KEY', 'sk-08493e83ce83432ea0d142f39b794ddf')
+
+#         # 初始化数据
+#         self._init_mock_data()
+
+#         print("✅ 工具初始化完成")
+#         print(f"  高德API: {'✅ 已配置' if self.amap_key else '❌ 未配置'}")
+#         print(f"  DeepSeek: {'✅ 已配置' if self.deepseek_key else '❌ 未配置'}")
+
+#     def _init_mock_data(self):
+#         """初始化模拟数据"""
+#         # 酒店设施列表
+#         self.hotel_amenities = [
+#             'WiFi', '停车场', '游泳池', '健身房', '早餐',
+#             '商务中心', '洗衣服务', '餐厅', '酒吧', 'SPA',
+#             '24小时前台', '行李寄存', '无烟房', '儿童设施'
+#         ]
+
+#         # 航空公司
+#         self.airlines = [
+#             ('CA', '中国国航'), ('CZ', '南方航空'), ('MU', '东方航空'),
+#             ('HU', '海南航空'), ('ZH', '深圳航空'), ('FM', '上海航空'),
+#             ('3U', '四川航空'), ('MF', '厦门航空')
+#         ]
+
+#         # 机型
+#         self.aircraft_types = [
+#             'B737', 'B777', 'B787', 'A320', 'A330', 'A350'
+#         ]
+
+#         # 景点数据
+#         self.attractions_data = {
+#             '北京': [
+#                 {'name': '故宫', 'type': '历史文化', 'rating': 4.9, 'price': 60},
+#                 {'name': '长城', 'type': '历史文化', 'rating': 4.8, 'price': 40},
+#                 {'name': '天坛', 'type': '历史文化', 'rating': 4.8, 'price': 35},
+#                 {'name': '颐和园', 'type': '园林', 'rating': 4.7, 'price': 30},
+#                 {'name': '北海公园', 'type': '园林', 'rating': 4.6, 'price': 10}
+#             ],
+#             '上海': [
+#                 {'name': '迪士尼乐园', 'type': '主题乐园', 'rating': 4.7, 'price': 399},
+#                 {'name': '东方明珠', 'type': '地标建筑', 'rating': 4.5, 'price': 180},
+#                 {'name': '外滩', 'type': '风景区', 'rating': 4.8, 'price': 0},
+#                 {'name': '豫园', 'type': '园林', 'rating': 4.4, 'price': 40},
+#                 {'name': '海洋馆', 'type': '博物馆', 'rating': 4.6, 'price': 160}
+#             ]
+#         }
+
+#     def search_hotels(self, city: str, checkin_date: str, checkout_date: str,
+#                      requirements: List[str] = None) -> List[Dict]:
+#         """
+#         搜索酒店（增强版）
+
+#         Args:
+#             city: 城市名称
+#             checkin_date: 入住日期
+#             checkout_date: 退房日期
+#             requirements: 用户需求列表 ['停车场', '游泳池']
+
+#         Returns:
+#             酒店列表，包含详细信息
+#         """
+#         hotels = []
+
+#         # 尝试使用高德API
+#         if self.amap_key and city:
+#             amap_hotels = self._search_hotels_amap(city)
+#             hotels.extend(amap_hotels)
+
+#         # 生成补充数据
+#         if len(hotels) < 10:
+#             mock_hotels = self._generate_mock_hotels(city, 10 - len(hotels))
+#             hotels.extend(mock_hotels)
+
+#         # 增强数据字段
+#         for hotel in hotels:
+#             # 确保有必要字段
+#             hotel['checkin_date'] = checkin_date
+#             hotel['checkout_date'] = checkout_date
+
+#             # 计算晚数和总价
+#             nights = self._calculate_nights(checkin_date, checkout_date)
+#             hotel['nights'] = nights
+#             hotel['total_price'] = hotel.get('price', 500) * nights
+
+#             # 生成房型信息
+#             if 'room_types' not in hotel:
+#                 hotel['room_types'] = self._generate_room_types(hotel.get('price', 500))
+
+#             # 确保有设施信息
+#             if 'amenities' not in hotel:
+#                 hotel['amenities'] = random.sample(
+#                     self.hotel_amenities,
+#                     random.randint(5, 10)
+#                 )
+
+#             # 添加详细描述
+#             if 'description' not in hotel:
+#                 hotel['description'] = self._generate_hotel_description(hotel)
+
+#             # 添加政策信息
+#             hotel['policies'] = {
+#                 'checkin_time': '14:00',
+#                 'checkout_time': '12:00',
+#                 'cancellation': '入住前24小时免费取消',
+#                 'deposit': '需要押金'
+#             }
+
+#         # 根据需求筛选
+#         if requirements:
+#             hotels = self._filter_hotels_by_requirements(hotels, requirements)
+
+#         return hotels
+
+#     def _filter_hotels_by_requirements(self, hotels: List[Dict],
+#                                       requirements: List[str]) -> List[Dict]:
+#         """根据需求筛选酒店"""
+#         filtered = []
+
+#         for hotel in hotels:
+#             amenities = hotel.get('amenities', [])
+#             # 检查是否满足所有需求
+#             meets_requirements = True
+#             for req in requirements:
+#                 # 模糊匹配
+#                 found = False
+#                 for amenity in amenities:
+#                     if req in amenity or amenity in req:
+#                         found = True
+#                         break
+#                 if not found:
+#                     meets_requirements = False
+#                     break
+
+#             if meets_requirements:
+#                 filtered.append(hotel)
+
+#         return filtered
+
+#     def search_flights(self, origin: str, destination: str,
+#                       departure_date: str, cabin_class: str = 'ECONOMY') -> List[Dict]:
+#         """
+#         搜索航班（修复版）
+
+#         Returns:
+#             规范的航班数据列表
+#         """
+#         flights = []
+
+#         # 生成模拟航班数据
+#         num_flights = random.randint(6, 12)
+#         base_time = datetime.now().replace(hour=6, minute=0)
+
+#         for i in range(num_flights):
+#             # 随机航空公司
+#             airline_code, airline_name = random.choice(self.airlines)
+#             flight_number = f"{airline_code}{random.randint(100, 999)}"
+
+#             # 出发时间（分布在一天内）
+#             departure_time = base_time + timedelta(hours=i*2 + random.randint(0, 1))
+
+#             # 飞行时间（1.5-4小时）
+#             flight_duration = timedelta(
+#                 hours=random.randint(1, 3),
+#                 minutes=random.choice([0, 15, 30, 45])
+#             )
+#             arrival_time = departure_time + flight_duration
+
+#             # 价格（根据舱位等级）
+#             base_price = random.randint(600, 2000)
+#             if cabin_class == 'BUSINESS':
+#                 price = base_price * 3
+#             elif cabin_class == 'FIRST':
+#                 price = base_price * 5
+#             else:
+#                 price = base_price
+
+#             flight = {
+#                 # 基础信息
+#                 'carrier_code': airline_code,
+#                 'carrier_name': airline_name,
+#                 'flight_number': flight_number,
+
+#                 # 机场信息
+#                 'departure_iata': origin[:3].upper(),
+#                 'arrival_iata': destination[:3].upper(),
+#                 'departure_airport': f"{origin}机场",
+#                 'arrival_airport': f"{destination}机场",
+
+#                 # 时间信息（修复格式）
+#                 'departure': departure_time.strftime("%H:%M"),
+#                 'arrival': arrival_time.strftime("%H:%M"),
+#                 'departure_time': departure_time.isoformat(),
+#                 'arrival_time': arrival_time.isoformat(),
+#                 'duration': f"{flight_duration.seconds//3600}h {(flight_duration.seconds%3600)//60}m",
+
+#                 # 舱位和机型
+#                 'cabin_class': cabin_class,
+#                 'aircraft_code': random.choice(self.aircraft_types),
+
+#                 # 价格信息
+#                 'base_price': price,
+#                 'total_price': price,
+#                 'currency': 'CNY',
+
+#                 # 其他信息
+#                 'number_of_bookable_seats': random.randint(5, 30),
+#                 'included_checked_bags': '1件23kg' if cabin_class == 'ECONOMY' else '2件32kg',
+#                 'included_cabin_bags': '1件7kg',
+#                 'last_ticketing_date': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
+
+#                 # 航班状态
+#                 'status': '正常',
+#                 'on_time_rate': f"{random.randint(70, 95)}%"
+#             }
+
+#             flights.append(flight)
+
+#         # 按出发时间排序
+#         flights.sort(key=lambda x: x['departure_time'])
+
+#         return flights
+
+#     def get_weather(self, city: str) -> Dict:
+#         """获取天气信息"""
+#         try:
+#             # 如果有高德API，使用真实天气
+#             if self.amap_key:
+#                 return self._get_weather_amap(city)
+#         except:
+#             pass
+
+#         # 模拟天气数据
+#         weather_conditions = ['晴', '多云', '阴', '小雨', '雾']
+
+#         return {
+#             'success': True,
+#             'city': city,
+#             'current': {
+#                 'temperature': random.randint(10, 30),
+#                 'weather': random.choice(weather_conditions),
+#                 'humidity': random.randint(40, 80),
+#                 'wind_speed': random.randint(1, 5),
+#                 'feels_like': random.randint(8, 32)
+#             },
+#             'forecast': [
+#                 {
+#                     'date': (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d"),
+#                     'day_weather': random.choice(weather_conditions),
+#                     'night_weather': random.choice(weather_conditions),
+#                     'day_temp': random.randint(15, 30),
+#                     'night_temp': random.randint(10, 20)
+#                 }
+#                 for i in range(1, 4)
+#             ]
+#         }
+
+#     def search_attractions(self, city: str) -> List[Dict]:
+#         """搜索景点"""
+#         attractions = []
+
+#         # 使用预定义数据
+#         if city in self.attractions_data:
+#             attractions = self.attractions_data[city].copy()
+#         else:
+#             # 生成通用景点
+#             attractions = self._generate_mock_attractions(city)
+
+#         # 增强景点信息
+#         for attr in attractions:
+#             # 添加详细信息
+#             if 'address' not in attr:
+#                 attr['address'] = f"{city}市中心"
+
+#             if 'opening_hours' not in attr:
+#                 attr['opening_hours'] = '09:00-18:00'
+
+#             if 'description' not in attr:
+#                 attr['description'] = self._generate_attraction_description(attr)
+
+#             if 'tips' not in attr:
+#                 attr['tips'] = [
+#                     "建议预订门票避免排队",
+#                     "最佳游览时间2-3小时",
+#                     "适合拍照的景点"
+#                 ]
+
+#         return attractions
+
+#     def get_ticket_info(self, attraction_name: str) -> Dict:
+#         """
+#         获取门票信息
+
+#         Returns:
+#             包含票价、开放时间、优惠政策等
+#         """
+#         # 特定景点信息
+#         ticket_info = {
+#             '迪士尼': {
+#                 'name': '上海迪士尼乐园',
+#                 'regular_price': 435,
+#                 'peak_price': 659,
+#                 'child_price': 325,
+#                 'opening_hours': '09:00-21:00',
+#                 'tips': [
+#                     "建议提前在线购票",
+#                     "可购买快速通行证",
+#                     "儿童、老人有优惠"
+#                 ],
+#                 'packages': [
+#                     {'name': '一日票', 'price': 435},
+#                     {'name': '两日票', 'price': 780},
+#                     {'name': '年卡', 'price': 1650}
+#                 ]
+#             },
+#             '海洋公园': {
+#                 'name': '香港海洋公园',
+#                 'adult_price': 498,
+#                 'child_price': 249,
+#                 'opening_hours': '10:00-18:00',
+#                 'tips': [
+#                     "网上购票有9折优惠",
+#                     "可以购买餐券套票",
+#                     "3岁以下免费"
+#                 ],
+#                 'packages': [
+#                     {'name': '标准票', 'price': 498},
+#                     {'name': '快速通行证', 'price': 280},
+#                     {'name': '全包套票', 'price': 799}
+#                 ]
+#             }
+#         }
+
+#         # 查找匹配的景点
+#         for key, info in ticket_info.items():
+#             if key in attraction_name:
+#                 return {
+#                     'success': True,
+#                     'data': info
+#                 }
+
+#         # 生成通用门票信息
+#         return {
+#             'success': True,
+#             'data': {
+#                 'name': attraction_name,
+#                 'adult_price': random.randint(30, 200),
+#                 'child_price': random.randint(15, 100),
+#                 'opening_hours': '09:00-18:00',
+#                 'tips': [
+#                     "建议提前预订",
+#                     "周末人较多",
+#                     "学生证有优惠"
+#                 ]
+#             }
+#         }
+
+#     def search_restaurants(self, city: str) -> List[Dict]:
+#         """搜索餐厅"""
+#         cuisines = ['川菜', '粤菜', '江浙菜', '西餐', '日料', '韩餐', '火锅', '烧烤']
+#         restaurants = []
+
+#         for i in range(10):
+#             restaurant = {
+#                 'name': f"{city}美食{i+1}号",
+#                 'cuisine': random.choice(cuisines),
+#                 'rating': round(random.uniform(4.0, 5.0), 1),
+#                 'price_per_person': random.randint(50, 300),
+#                 'address': f"{city}市美食街{i+1}号",
+#                 'popular_dishes': [
+#                     f"招牌菜{j+1}" for j in range(3)
+#                 ],
+#                 'opening_hours': '11:00-22:00',
+#                 'need_reservation': random.choice([True, False])
+#             }
+#             restaurants.append(restaurant)
+
+#         return restaurants
+
+#     def plan_itinerary(self, destination: str, days: int, budget: float,
+#                       interests: List[str]) -> Dict:
+#         """
+#         规划完整行程
+
+#         Returns:
+#             包含每日安排、预算分配、推荐项目的完整行程
+#         """
+#         # 获取基础数据
+#         hotels = self.search_hotels(destination, '', '')[:3]
+#         attractions = self.search_attractions(destination)
+#         restaurants = self.search_restaurants(destination)
+
+#         # 预算分配
+#         budget_allocation = {
+#             'accommodation': budget * 0.3,
+#             'transportation': budget * 0.2,
+#             'attractions': budget * 0.2,
+#             'dining': budget * 0.2,
+#             'shopping': budget * 0.1
+#         }
+
+#         # 生成每日行程
+#         daily_plans = []
+#         for day in range(1, days + 1):
+#             # 选择当天的景点
+#             day_attractions = random.sample(
+#                 attractions,
+#                 min(3, len(attractions))
+#             )
+
+#             # 选择餐厅
+#             day_restaurants = random.sample(
+#                 restaurants,
+#                 min(2, len(restaurants))
+#             )
+
+#             daily_plan = {
+#                 'day': day,
+#                 'date': (datetime.now() + timedelta(days=day-1)).strftime("%Y-%m-%d"),
+#                 'morning': [
+#                     f"08:00 - 酒店早餐",
+#                     f"09:00 - 前往{day_attractions[0]['name']}",
+#                     f"09:30 - 游览{day_attractions[0]['name']}"
+#                 ],
+#                 'afternoon': [
+#                     f"12:00 - 午餐：{day_restaurants[0]['name']}",
+#                     f"14:00 - 前往{day_attractions[1]['name'] if len(day_attractions) > 1 else '市中心'}",
+#                     f"14:30 - 游览/购物"
+#                 ],
+#                 'evening': [
+#                     f"18:00 - 晚餐：{day_restaurants[1]['name'] if len(day_restaurants) > 1 else '当地特色'}",
+#                     f"20:00 - 返回酒店休息"
+#                 ],
+#                 'estimated_cost': budget / days,
+#                 'tips': [
+#                     "记得带好相机",
+#                     "穿舒适的鞋子",
+#                     "注意防晒"
+#                 ]
+#             }
+#             daily_plans.append(daily_plan)
+
+#         # 生成完整行程
+#         itinerary = {
+#             'destination': destination,
+#             'days': days,
+#             'total_budget': budget,
+#             'budget_allocation': budget_allocation,
+#             'daily_plans': daily_plans,
+#             'recommended_hotels': hotels[:3],
+#             'must_visit': attractions[:5],
+#             'estimated_cost': budget * 0.9,
+#             'recommendations': [
+#                 f"建议提前预订{hotels[0]['name']}",
+#                 f"必去景点：{attractions[0]['name']}",
+#                 "记得品尝当地特色美食",
+#                 "建议购买城市旅游卡"
+#             ]
+#         }
+
+#         return itinerary
+
+#     # ==================== 辅助方法 ====================
+
+#     def _calculate_nights(self, checkin: str, checkout: str) -> int:
+#         """计算住宿晚数"""
+#         try:
+#             if checkin and checkout:
+#                 start = datetime.strptime(checkin, "%Y-%m-%d")
+#                 end = datetime.strptime(checkout, "%Y-%m-%d")
+#                 return max((end - start).days, 1)
+#         except:
+#             pass
+#         return 1
+
+#     def _generate_room_types(self, base_price: float) -> List[Dict]:
+#         """生成房型信息"""
+#         return [
+#             {
+#                 'name': '标准双床房',
+#                 'price': base_price,
+#                 'beds': '2张单人床',
+#                 'size': '25平米',
+#                 'max_occupancy': 2
+#             },
+#             {
+#                 'name': '豪华大床房',
+#                 'price': base_price * 1.2,
+#                 'beds': '1张大床',
+#                 'size': '30平米',
+#                 'max_occupancy': 2
+#             },
+#             {
+#                 'name': '行政套房',
+#                 'price': base_price * 1.8,
+#                 'beds': '1张大床+沙发床',
+#                 'size': '45平米',
+#                 'max_occupancy': 3
+#             }
+#         ]
+
+#     def _generate_hotel_description(self, hotel: Dict) -> str:
+#         """生成酒店描述"""
+#         templates = [
+#             f"{hotel['name']}位于{hotel.get('city', '市')}中心，提供优质的住宿体验。",
+#             f"现代化的{hotel['name']}，地理位置优越，设施完善。",
+#             f"{hotel['name']}致力于为客人提供舒适、便捷的入住体验。"
+#         ]
+#         return random.choice(templates)
+
+#     def _generate_attraction_description(self, attraction: Dict) -> str:
+#         """生成景点描述"""
+#         return f"{attraction['name']}是当地著名的{attraction.get('type', '景点')}，深受游客喜爱。"
+
+#     def _generate_mock_hotels(self, city: str, count: int) -> List[Dict]:
+#         """生成模拟酒店数据"""
+#         hotels = []
+#         hotel_types = ['商务酒店', '度假酒店', '精品酒店', '经济型酒店', '豪华酒店']
+
+#         for i in range(count):
+#             price = random.randint(200, 1500)
+#             hotel = {
+#                 'name': f"{city}酒店{i+1}号",
+#                 'type': random.choice(hotel_types),
+#                 'address': f"{city}市中心街道{i+1}号",
+#                 'city': city,
+#                 'rating': round(random.uniform(4.0, 5.0), 1),
+#                 'price': price,
+#                 'amenities': random.sample(self.hotel_amenities, random.randint(5, 10)),
+#                 'tel': f"021-{''.join([str(random.randint(0, 9)) for _ in range(8)])}"
+#             }
+#             hotels.append(hotel)
+
+#         return hotels
+
+#     def _generate_mock_attractions(self, city: str) -> List[Dict]:
+#         """生成模拟景点数据"""
+#         attraction_types = ['历史文化', '自然风光', '主题乐园', '博物馆', '地标建筑']
+#         attractions = []
+
+#         for i in range(5):
+#             attraction = {
+#                 'name': f"{city}景点{i+1}",
+#                 'type': random.choice(attraction_types),
+#                 'rating': round(random.uniform(4.0, 5.0), 1),
+#                 'price': random.randint(0, 200),
+#                 'address': f"{city}市景区{i+1}号"
+#             }
+#             attractions.append(attraction)
+
+#         return attractions
+
+#     def _search_hotels_amap(self, city: str) -> List[Dict]:
+#         """使用高德地图API搜索酒店"""
+#         try:
+#             url = "https://restapi.amap.com/v3/place/text"
+#             params = {
+#                 'key': self.amap_key,
+#                 'keywords': '酒店',
+#                 'city': city,
+#                 'types': '100100',  # 酒店类型
+#                 'offset': 20
+#             }
+
+#             response = requests.get(url, params=params, timeout=5)
+#             if response.status_code == 200:
+#                 data = response.json()
+#                 hotels = []
+
+#                 for poi in data.get('pois', []):
+#                     hotel = {
+#                         'name': poi['name'],
+#                         'address': poi.get('address', ''),
+#                         'tel': poi.get('tel', ''),
+#                         'location': poi.get('location', ''),
+#                         'city': city,
+#                         'rating': round(random.uniform(4.0, 5.0), 1),
+#                         'price': random.randint(200, 1500)
+#                     }
+#                     hotels.append(hotel)
+
+#                 return hotels
+#         except Exception as e:
+#             print(f"高德API调用失败: {e}")
+
+#         return []
+
+#     def _get_weather_amap(self, city: str) -> Dict:
+#         """使用高德地图API获取天气"""
+#         try:
+#             url = "https://restapi.amap.com/v3/weather/weatherInfo"
+#             params = {
+#                 'key': self.amap_key,
+#                 'city': city,
+#                 'extensions': 'all'
+#             }
+
+#             response = requests.get(url, params=params, timeout=5)
+#             if response.status_code == 200:
+#                 data = response.json()
+#                 if data['status'] == '1' and data.get('forecasts'):
+#                     forecast = data['forecasts'][0]
+#                     current = forecast['casts'][0] if forecast.get('casts') else {}
+
+#                     return {
+#                         'success': True,
+#                         'city': forecast['city'],
+#                         'current': {
+#                             'temperature': current.get('daytemp', 20),
+#                             'weather': current.get('dayweather', '晴'),
+#                             'humidity': random.randint(40, 80),
+#                             'wind_speed': current.get('daypower', '≤3')
+#                         },
+#                         'forecast': [
+#                             {
+#                                 'date': cast['date'],
+#                                 'day_weather': cast['dayweather'],
+#                                 'night_weather': cast['nightweather'],
+#                                 'day_temp': cast['daytemp'],
+#                                 'night_temp': cast['nighttemp']
+#                             }
+#                             for cast in forecast.get('casts', [])[:3]
+#                         ]
+#                     }
+#         except Exception as e:
+#             print(f"天气API调用失败: {e}")
+
+#         return self.get_weather(city)  # 降级到模拟数据
+
+
+# # 测试
+# if __name__ == "__main__":
+#     tools = TravelTools()
+
+#     # 测试酒店搜索
+#     print("\n测试酒店搜索（带筛选）:")
+#     hotels = tools.search_hotels(
+#         city="北京",
+#         checkin_date="2025-12-01",
+#         checkout_date="2025-12-03",
+#         requirements=["停车场", "游泳池"]
+#     )
+#     print(f"找到 {len(hotels)} 家符合条件的酒店")
+#     if hotels:
+#         print(f"第一家: {hotels[0]['name']}")
+#         print(f"  设施: {hotels[0]['amenities']}")
+
+#     # 测试航班搜索
+#     print("\n测试航班搜索:")
+#     flights = tools.search_flights("北京", "上海", "2025-12-01")
+#     print(f"找到 {len(flights)} 个航班")
+#     if flights:
+#         flight = flights[0]
+#         print(f"第一个航班: {flight['carrier_code']}{flight['flight_number']}")
+#         print(f"  时间: {flight['departure']} -> {flight['arrival']}")
+#         print(f"  价格: ¥{flight['total_price']}")
+
+#     # 测试门票查询
+#     print("\n测试门票查询:")
+#     ticket = tools.get_ticket_info("迪士尼")
+#     if ticket['success']:
+#         info = ticket['data']
+#         print(f"{info['name']}: ¥{info.get('regular_price', info.get('adult_price'))}")
+#         print(f"开放时间: {info['opening_hours']}")
+
+#     # 测试行程规划
+#     print("\n测试行程规划:")
+#     itinerary = tools.plan_itinerary("上海", 3, 5000, ["文化", "美食"])
+#     print(f"目的地: {itinerary['destination']}")
+#     print(f"天数: {itinerary['days']}天")
+#     print(f"第一天行程:")
+#     for activity in itinerary['daily_plans'][0]['morning']:
+#         print(f"  {activity}")
+
+
+
 """
-改进版 TravelTools - 旅行工具类
-修复航班数据问题，增强酒店筛选功能
+Improved TravelTools - Travel Utility Class
+Fixes flight data issues and enhances hotel filtering functionality.
 """
 
 import json
@@ -13,127 +716,127 @@ import requests
 
 class TravelTools:
     """
-    旅行工具类 - 提供各种旅行相关数据
-    改进版特性：
-    1. 修复航班数据结构
-    2. 增强酒店筛选
-    3. 门票信息查询
-    4. 完整行程规划
+    Travel Utility Class - Provides various travel-related data
+    Improved Features:
+    1. Fixed flight data structure
+    2. Enhanced hotel filtering
+    3. Ticket information query
+    4. Full itinerary planning
     """
 
     def __init__(self):
-        """初始化工具"""
-        # 配置API密钥
+        """Initialize Tools"""
+        # Configure API Keys
         self.amap_key = os.getenv('AMAP_API_KEY', '33b713c72bf676bdbf300951b0f238ce')
         self.deepseek_key = os.getenv('DEEPSEEK_API_KEY', 'sk-08493e83ce83432ea0d142f39b794ddf')
 
-        # 初始化数据
+        # Initialize data
         self._init_mock_data()
 
-        print("✅ 工具初始化完成")
-        print(f"  高德API: {'✅ 已配置' if self.amap_key else '❌ 未配置'}")
-        print(f"  DeepSeek: {'✅ 已配置' if self.deepseek_key else '❌ 未配置'}")
+        print("✅ Tools Initialization Complete")
+        print(f"  Gaode API: {'✅ Configured' if self.amap_key else '❌ Not Configured'}")
+        print(f"  DeepSeek: {'✅ Configured' if self.deepseek_key else '❌ Not Configured'}")
 
     def _init_mock_data(self):
-        """初始化模拟数据"""
-        # 酒店设施列表
+        """Initialize Mock Data"""
+        # Hotel Amenities List
         self.hotel_amenities = [
-            'WiFi', '停车场', '游泳池', '健身房', '早餐',
-            '商务中心', '洗衣服务', '餐厅', '酒吧', 'SPA',
-            '24小时前台', '行李寄存', '无烟房', '儿童设施'
+            'WiFi', 'Parking', 'Swimming Pool', 'Gym', 'Breakfast',
+            'Business Center', 'Laundry Service', 'Restaurant', 'Bar', 'SPA',
+            '24-hour Front Desk', 'Luggage Storage', 'Non-smoking Rooms', 'Children Facilities'
         ]
 
-        # 航空公司
+        # Airlines
         self.airlines = [
-            ('CA', '中国国航'), ('CZ', '南方航空'), ('MU', '东方航空'),
-            ('HU', '海南航空'), ('ZH', '深圳航空'), ('FM', '上海航空'),
-            ('3U', '四川航空'), ('MF', '厦门航空')
+            ('CA', 'Air China'), ('CZ', 'China Southern'), ('MU', 'China Eastern'),
+            ('HU', 'Hainan Airlines'), ('ZH', 'Shenzhen Airlines'), ('FM', 'Shanghai Airlines'),
+            ('3U', 'Sichuan Airlines'), ('MF', 'Xiamen Airlines')
         ]
 
-        # 机型
+        # Aircraft Types
         self.aircraft_types = [
             'B737', 'B777', 'B787', 'A320', 'A330', 'A350'
         ]
 
-        # 景点数据
+        # Attraction Data
         self.attractions_data = {
             '北京': [
-                {'name': '故宫', 'type': '历史文化', 'rating': 4.9, 'price': 60},
-                {'name': '长城', 'type': '历史文化', 'rating': 4.8, 'price': 40},
-                {'name': '天坛', 'type': '历史文化', 'rating': 4.8, 'price': 35},
-                {'name': '颐和园', 'type': '园林', 'rating': 4.7, 'price': 30},
-                {'name': '北海公园', 'type': '园林', 'rating': 4.6, 'price': 10}
+                {'name': 'The Forbidden City', 'type': 'History & Culture', 'rating': 4.9, 'price': 60},
+                {'name': 'The Great Wall', 'type': 'History & Culture', 'rating': 4.8, 'price': 40},
+                {'name': 'Temple of Heaven', 'type': 'History & Culture', 'rating': 4.8, 'price': 35},
+                {'name': 'Summer Palace', 'type': 'Garden', 'rating': 4.7, 'price': 30},
+                {'name': 'Beihai Park', 'type': 'Garden', 'rating': 4.6, 'price': 10}
             ],
             '上海': [
-                {'name': '迪士尼乐园', 'type': '主题乐园', 'rating': 4.7, 'price': 399},
-                {'name': '东方明珠', 'type': '地标建筑', 'rating': 4.5, 'price': 180},
-                {'name': '外滩', 'type': '风景区', 'rating': 4.8, 'price': 0},
-                {'name': '豫园', 'type': '园林', 'rating': 4.4, 'price': 40},
-                {'name': '海洋馆', 'type': '博物馆', 'rating': 4.6, 'price': 160}
+                {'name': 'Disneyland Park', 'type': 'Theme Park', 'rating': 4.7, 'price': 399},
+                {'name': 'Oriental Pearl Tower', 'type': 'Landmark', 'rating': 4.5, 'price': 180},
+                {'name': 'The Bund', 'type': 'Scenic Area', 'rating': 4.8, 'price': 0},
+                {'name': 'Yuyuan Garden', 'type': 'Garden', 'rating': 4.4, 'price': 40},
+                {'name': 'Aquarium', 'type': 'Museum', 'rating': 4.6, 'price': 160}
             ]
         }
 
     def search_hotels(self, city: str, checkin_date: str, checkout_date: str,
                      requirements: List[str] = None) -> List[Dict]:
         """
-        搜索酒店（增强版）
+        Search Hotels (Enhanced)
 
         Args:
-            city: 城市名称
-            checkin_date: 入住日期
-            checkout_date: 退房日期
-            requirements: 用户需求列表 ['停车场', '游泳池']
+            city: City Name
+            checkin_date: Check-in Date
+            checkout_date: Check-out Date
+            requirements: List of user requirements ['Parking', 'Swimming Pool']
 
         Returns:
-            酒店列表，包含详细信息
+            List of hotels, including detailed information
         """
         hotels = []
 
-        # 尝试使用高德API
+        # Try to use Gaode API
         if self.amap_key and city:
             amap_hotels = self._search_hotels_amap(city)
             hotels.extend(amap_hotels)
 
-        # 生成补充数据
+        # Generate supplementary data
         if len(hotels) < 10:
             mock_hotels = self._generate_mock_hotels(city, 10 - len(hotels))
             hotels.extend(mock_hotels)
 
-        # 增强数据字段
+        # Enhance data fields
         for hotel in hotels:
-            # 确保有必要字段
+            # Ensure required fields exist
             hotel['checkin_date'] = checkin_date
             hotel['checkout_date'] = checkout_date
 
-            # 计算晚数和总价
+            # Calculate number of nights and total price
             nights = self._calculate_nights(checkin_date, checkout_date)
             hotel['nights'] = nights
             hotel['total_price'] = hotel.get('price', 500) * nights
 
-            # 生成房型信息
+            # Generate room type information
             if 'room_types' not in hotel:
                 hotel['room_types'] = self._generate_room_types(hotel.get('price', 500))
 
-            # 确保有设施信息
+            # Ensure amenities information exists
             if 'amenities' not in hotel:
                 hotel['amenities'] = random.sample(
                     self.hotel_amenities,
                     random.randint(5, 10)
                 )
 
-            # 添加详细描述
+            # Add detailed description
             if 'description' not in hotel:
                 hotel['description'] = self._generate_hotel_description(hotel)
 
-            # 添加政策信息
+            # Add policy information
             hotel['policies'] = {
                 'checkin_time': '14:00',
                 'checkout_time': '12:00',
-                'cancellation': '入住前24小时免费取消',
-                'deposit': '需要押金'
+                'cancellation': 'Free cancellation 24 hours before check-in',
+                'deposit': 'Deposit required'
             }
 
-        # 根据需求筛选
+        # Filter based on requirements
         if requirements:
             hotels = self._filter_hotels_by_requirements(hotels, requirements)
 
@@ -141,15 +844,15 @@ class TravelTools:
 
     def _filter_hotels_by_requirements(self, hotels: List[Dict],
                                       requirements: List[str]) -> List[Dict]:
-        """根据需求筛选酒店"""
+        """Filter hotels based on requirements"""
         filtered = []
 
         for hotel in hotels:
             amenities = hotel.get('amenities', [])
-            # 检查是否满足所有需求
+            # Check if all requirements are met
             meets_requirements = True
             for req in requirements:
-                # 模糊匹配
+                # Fuzzy matching
                 found = False
                 for amenity in amenities:
                     if req in amenity or amenity in req:
@@ -167,33 +870,33 @@ class TravelTools:
     def search_flights(self, origin: str, destination: str,
                       departure_date: str, cabin_class: str = 'ECONOMY') -> List[Dict]:
         """
-        搜索航班（修复版）
+        Search Flights (Fixed Version)
 
         Returns:
-            规范的航班数据列表
+            Standardized list of flight data
         """
         flights = []
 
-        # 生成模拟航班数据
+        # Generate mock flight data
         num_flights = random.randint(6, 12)
         base_time = datetime.now().replace(hour=6, minute=0)
 
         for i in range(num_flights):
-            # 随机航空公司
+            # Random airline
             airline_code, airline_name = random.choice(self.airlines)
             flight_number = f"{airline_code}{random.randint(100, 999)}"
 
-            # 出发时间（分布在一天内）
+            # Departure time (spread throughout the day)
             departure_time = base_time + timedelta(hours=i*2 + random.randint(0, 1))
 
-            # 飞行时间（1.5-4小时）
+            # Flight duration (1.5 - 4 hours)
             flight_duration = timedelta(
                 hours=random.randint(1, 3),
                 minutes=random.choice([0, 15, 30, 45])
             )
             arrival_time = departure_time + flight_duration
 
-            # 价格（根据舱位等级）
+            # Price (based on cabin class)
             base_price = random.randint(600, 2000)
             if cabin_class == 'BUSINESS':
                 price = base_price * 3
@@ -203,62 +906,62 @@ class TravelTools:
                 price = base_price
 
             flight = {
-                # 基础信息
+                # Basic Info
                 'carrier_code': airline_code,
                 'carrier_name': airline_name,
                 'flight_number': flight_number,
 
-                # 机场信息
+                # Airport Info
                 'departure_iata': origin[:3].upper(),
                 'arrival_iata': destination[:3].upper(),
-                'departure_airport': f"{origin}机场",
-                'arrival_airport': f"{destination}机场",
+                'departure_airport': f"{origin} Airport",
+                'arrival_airport': f"{destination} Airport",
 
-                # 时间信息（修复格式）
+                # Time Info (Fixed format)
                 'departure': departure_time.strftime("%H:%M"),
                 'arrival': arrival_time.strftime("%H:%M"),
                 'departure_time': departure_time.isoformat(),
                 'arrival_time': arrival_time.isoformat(),
                 'duration': f"{flight_duration.seconds//3600}h {(flight_duration.seconds%3600)//60}m",
 
-                # 舱位和机型
+                # Cabin and Aircraft Type
                 'cabin_class': cabin_class,
                 'aircraft_code': random.choice(self.aircraft_types),
 
-                # 价格信息
+                # Price Info
                 'base_price': price,
                 'total_price': price,
                 'currency': 'CNY',
 
-                # 其他信息
+                # Other Info
                 'number_of_bookable_seats': random.randint(5, 30),
-                'included_checked_bags': '1件23kg' if cabin_class == 'ECONOMY' else '2件32kg',
-                'included_cabin_bags': '1件7kg',
+                'included_checked_bags': '1 piece 23kg' if cabin_class == 'ECONOMY' else '2 pieces 32kg',
+                'included_cabin_bags': '1 piece 7kg',
                 'last_ticketing_date': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
 
-                # 航班状态
-                'status': '正常',
+                # Flight Status
+                'status': 'Normal',
                 'on_time_rate': f"{random.randint(70, 95)}%"
             }
 
             flights.append(flight)
 
-        # 按出发时间排序
+        # Sort by departure time
         flights.sort(key=lambda x: x['departure_time'])
 
         return flights
 
     def get_weather(self, city: str) -> Dict:
-        """获取天气信息"""
+        """Get Weather Information"""
         try:
-            # 如果有高德API，使用真实天气
+            # If Gaode API key exists, use real weather
             if self.amap_key:
                 return self._get_weather_amap(city)
         except:
             pass
 
-        # 模拟天气数据
-        weather_conditions = ['晴', '多云', '阴', '小雨', '雾']
+        # Mock weather data
+        weather_conditions = ['Sunny', 'Cloudy', 'Overcast', 'Light Rain', 'Fog']
 
         return {
             'success': True,
@@ -283,21 +986,21 @@ class TravelTools:
         }
 
     def search_attractions(self, city: str) -> List[Dict]:
-        """搜索景点"""
+        """Search Attractions"""
         attractions = []
 
-        # 使用预定义数据
+        # Use predefined data
         if city in self.attractions_data:
             attractions = self.attractions_data[city].copy()
         else:
-            # 生成通用景点
+            # Generate generic attractions
             attractions = self._generate_mock_attractions(city)
 
-        # 增强景点信息
+        # Enhance attraction information
         for attr in attractions:
-            # 添加详细信息
+            # Add detailed information
             if 'address' not in attr:
-                attr['address'] = f"{city}市中心"
+                attr['address'] = f"{city} City Center"
 
             if 'opening_hours' not in attr:
                 attr['opening_hours'] = '09:00-18:00'
@@ -307,58 +1010,58 @@ class TravelTools:
 
             if 'tips' not in attr:
                 attr['tips'] = [
-                    "建议预订门票避免排队",
-                    "最佳游览时间2-3小时",
-                    "适合拍照的景点"
+                    "Suggested to book tickets in advance to avoid queues",
+                    "Best visiting time is 2-3 hours",
+                    "Good spot for photography"
                 ]
 
         return attractions
 
     def get_ticket_info(self, attraction_name: str) -> Dict:
         """
-        获取门票信息
+        Get ticket information
 
         Returns:
-            包含票价、开放时间、优惠政策等
+            Includes ticket price, opening hours, discount policies, etc.
         """
-        # 特定景点信息
+        # Specific attraction information
         ticket_info = {
             '迪士尼': {
-                'name': '上海迪士尼乐园',
+                'name': 'Shanghai Disneyland Park',
                 'regular_price': 435,
                 'peak_price': 659,
                 'child_price': 325,
                 'opening_hours': '09:00-21:00',
                 'tips': [
-                    "建议提前在线购票",
-                    "可购买快速通行证",
-                    "儿童、老人有优惠"
+                    "Recommended to purchase tickets online in advance",
+                    "FastPass available for purchase",
+                    "Discounts for children and seniors"
                 ],
                 'packages': [
-                    {'name': '一日票', 'price': 435},
-                    {'name': '两日票', 'price': 780},
-                    {'name': '年卡', 'price': 1650}
+                    {'name': 'One-Day Ticket', 'price': 435},
+                    {'name': 'Two-Day Ticket', 'price': 780},
+                    {'name': 'Annual Pass', 'price': 1650}
                 ]
             },
             '海洋公园': {
-                'name': '香港海洋公园',
+                'name': 'Hong Kong Ocean Park',
                 'adult_price': 498,
                 'child_price': 249,
                 'opening_hours': '10:00-18:00',
                 'tips': [
-                    "网上购票有9折优惠",
-                    "可以购买餐券套票",
-                    "3岁以下免费"
+                    "10% discount for online purchase",
+                    "Meal vouchers available for purchase",
+                    "Free for children under 3"
                 ],
                 'packages': [
-                    {'name': '标准票', 'price': 498},
-                    {'name': '快速通行证', 'price': 280},
-                    {'name': '全包套票', 'price': 799}
+                    {'name': 'Standard Ticket', 'price': 498},
+                    {'name': 'Fast Track Pass', 'price': 280},
+                    {'name': 'All-inclusive Package', 'price': 799}
                 ]
             }
         }
 
-        # 查找匹配的景点
+        # Search for matching attraction
         for key, info in ticket_info.items():
             if key in attraction_name:
                 return {
@@ -366,7 +1069,7 @@ class TravelTools:
                     'data': info
                 }
 
-        # 生成通用门票信息
+        # Generate generic ticket information
         return {
             'success': True,
             'data': {
@@ -375,27 +1078,27 @@ class TravelTools:
                 'child_price': random.randint(15, 100),
                 'opening_hours': '09:00-18:00',
                 'tips': [
-                    "建议提前预订",
-                    "周末人较多",
-                    "学生证有优惠"
+                    "Recommended to book in advance",
+                    "Crowded on weekends",
+                    "Student discounts available"
                 ]
             }
         }
 
     def search_restaurants(self, city: str) -> List[Dict]:
-        """搜索餐厅"""
-        cuisines = ['川菜', '粤菜', '江浙菜', '西餐', '日料', '韩餐', '火锅', '烧烤']
+        """Search Restaurants"""
+        cuisines = ['Sichuan', 'Cantonese', 'Jiangzhe', 'Western', 'Japanese', 'Korean', 'Hotpot', 'BBQ']
         restaurants = []
 
         for i in range(10):
             restaurant = {
-                'name': f"{city}美食{i+1}号",
+                'name': f"{city} Cuisine #{i+1}",
                 'cuisine': random.choice(cuisines),
                 'rating': round(random.uniform(4.0, 5.0), 1),
                 'price_per_person': random.randint(50, 300),
-                'address': f"{city}市美食街{i+1}号",
+                'address': f"{city} Food Street #{i+1}",
                 'popular_dishes': [
-                    f"招牌菜{j+1}" for j in range(3)
+                    f"Signature Dish {j+1}" for j in range(3)
                 ],
                 'opening_hours': '11:00-22:00',
                 'need_reservation': random.choice([True, False])
@@ -407,17 +1110,17 @@ class TravelTools:
     def plan_itinerary(self, destination: str, days: int, budget: float,
                       interests: List[str]) -> Dict:
         """
-        规划完整行程
+        Plan complete itinerary
 
         Returns:
-            包含每日安排、预算分配、推荐项目的完整行程
+            Complete itinerary including daily schedule, budget allocation, and recommended items
         """
-        # 获取基础数据
+        # Get basic data
         hotels = self.search_hotels(destination, '', '')[:3]
         attractions = self.search_attractions(destination)
         restaurants = self.search_restaurants(destination)
 
-        # 预算分配
+        # Budget Allocation
         budget_allocation = {
             'accommodation': budget * 0.3,
             'transportation': budget * 0.2,
@@ -426,16 +1129,16 @@ class TravelTools:
             'shopping': budget * 0.1
         }
 
-        # 生成每日行程
+        # Generate daily itinerary
         daily_plans = []
         for day in range(1, days + 1):
-            # 选择当天的景点
+            # Select attractions for the day
             day_attractions = random.sample(
                 attractions,
                 min(3, len(attractions))
             )
 
-            # 选择餐厅
+            # Select restaurants
             day_restaurants = random.sample(
                 restaurants,
                 min(2, len(restaurants))
@@ -445,29 +1148,29 @@ class TravelTools:
                 'day': day,
                 'date': (datetime.now() + timedelta(days=day-1)).strftime("%Y-%m-%d"),
                 'morning': [
-                    f"08:00 - 酒店早餐",
-                    f"09:00 - 前往{day_attractions[0]['name']}",
-                    f"09:30 - 游览{day_attractions[0]['name']}"
+                    f"08:00 - Hotel Breakfast",
+                    f"09:00 - Head to {day_attractions[0]['name']}",
+                    f"09:30 - Visit {day_attractions[0]['name']}"
                 ],
                 'afternoon': [
-                    f"12:00 - 午餐：{day_restaurants[0]['name']}",
-                    f"14:00 - 前往{day_attractions[1]['name'] if len(day_attractions) > 1 else '市中心'}",
-                    f"14:30 - 游览/购物"
+                    f"12:00 - Lunch: {day_restaurants[0]['name']}",
+                    f"14:00 - Head to {day_attractions[1]['name'] if len(day_attractions) > 1 else 'City Center'}",
+                    f"14:30 - Sightseeing/Shopping"
                 ],
                 'evening': [
-                    f"18:00 - 晚餐：{day_restaurants[1]['name'] if len(day_restaurants) > 1 else '当地特色'}",
-                    f"20:00 - 返回酒店休息"
+                    f"18:00 - Dinner: {day_restaurants[1]['name'] if len(day_restaurants) > 1 else 'Local Specialty'}",
+                    f"20:00 - Return to hotel for rest"
                 ],
                 'estimated_cost': budget / days,
                 'tips': [
-                    "记得带好相机",
-                    "穿舒适的鞋子",
-                    "注意防晒"
+                    "Remember to bring your camera",
+                    "Wear comfortable shoes",
+                    "Use sunscreen"
                 ]
             }
             daily_plans.append(daily_plan)
 
-        # 生成完整行程
+        # Generate complete itinerary
         itinerary = {
             'destination': destination,
             'days': days,
@@ -478,19 +1181,19 @@ class TravelTools:
             'must_visit': attractions[:5],
             'estimated_cost': budget * 0.9,
             'recommendations': [
-                f"建议提前预订{hotels[0]['name']}",
-                f"必去景点：{attractions[0]['name']}",
-                "记得品尝当地特色美食",
-                "建议购买城市旅游卡"
+                f"Suggested to book {hotels[0]['name']} in advance",
+                f"Must-visit attraction: {attractions[0]['name']}",
+                "Remember to taste local specialty cuisine",
+                "Suggested to purchase a city tourist card"
             ]
         }
 
         return itinerary
 
-    # ==================== 辅助方法 ====================
+    # ==================== Helper Methods ====================
 
     def _calculate_nights(self, checkin: str, checkout: str) -> int:
-        """计算住宿晚数"""
+        """Calculate number of nights for accommodation"""
         try:
             if checkin and checkout:
                 start = datetime.strptime(checkin, "%Y-%m-%d")
@@ -501,55 +1204,55 @@ class TravelTools:
         return 1
 
     def _generate_room_types(self, base_price: float) -> List[Dict]:
-        """生成房型信息"""
+        """Generate room type information"""
         return [
             {
-                'name': '标准双床房',
+                'name': 'Standard Twin Room',
                 'price': base_price,
-                'beds': '2张单人床',
-                'size': '25平米',
+                'beds': '2 Single Beds',
+                'size': '25 sqm',
                 'max_occupancy': 2
             },
             {
-                'name': '豪华大床房',
+                'name': 'Deluxe King Room',
                 'price': base_price * 1.2,
-                'beds': '1张大床',
-                'size': '30平米',
+                'beds': '1 King Bed',
+                'size': '30 sqm',
                 'max_occupancy': 2
             },
             {
-                'name': '行政套房',
+                'name': 'Executive Suite',
                 'price': base_price * 1.8,
-                'beds': '1张大床+沙发床',
-                'size': '45平米',
+                'beds': '1 King Bed + Sofa Bed',
+                'size': '45 sqm',
                 'max_occupancy': 3
             }
         ]
 
     def _generate_hotel_description(self, hotel: Dict) -> str:
-        """生成酒店描述"""
+        """Generate hotel description"""
         templates = [
-            f"{hotel['name']}位于{hotel.get('city', '市')}中心，提供优质的住宿体验。",
-            f"现代化的{hotel['name']}，地理位置优越，设施完善。",
-            f"{hotel['name']}致力于为客人提供舒适、便捷的入住体验。"
+            f"{hotel['name']} is located in the heart of {hotel.get('city', 'the City')}, offering high-quality accommodation.",
+            f"The modern {hotel['name']} boasts excellent location and comprehensive facilities.",
+            f"{hotel['name']} is dedicated to providing guests with a comfortable and convenient stay."
         ]
         return random.choice(templates)
 
     def _generate_attraction_description(self, attraction: Dict) -> str:
-        """生成景点描述"""
-        return f"{attraction['name']}是当地著名的{attraction.get('type', '景点')}，深受游客喜爱。"
+        """Generate attraction description"""
+        return f"{attraction['name']} is a famous {attraction.get('type', 'attraction')} in the area, highly popular among tourists."
 
     def _generate_mock_hotels(self, city: str, count: int) -> List[Dict]:
-        """生成模拟酒店数据"""
+        """Generate mock hotel data"""
         hotels = []
-        hotel_types = ['商务酒店', '度假酒店', '精品酒店', '经济型酒店', '豪华酒店']
+        hotel_types = ['Business Hotel', 'Resort Hotel', 'Boutique Hotel', 'Budget Hotel', 'Luxury Hotel']
 
         for i in range(count):
             price = random.randint(200, 1500)
             hotel = {
-                'name': f"{city}酒店{i+1}号",
+                'name': f"{city} Hotel #{i+1}",
                 'type': random.choice(hotel_types),
-                'address': f"{city}市中心街道{i+1}号",
+                'address': f"{city} Downtown Street #{i+1}",
                 'city': city,
                 'rating': round(random.uniform(4.0, 5.0), 1),
                 'price': price,
@@ -561,31 +1264,31 @@ class TravelTools:
         return hotels
 
     def _generate_mock_attractions(self, city: str) -> List[Dict]:
-        """生成模拟景点数据"""
-        attraction_types = ['历史文化', '自然风光', '主题乐园', '博物馆', '地标建筑']
+        """Generate mock attraction data"""
+        attraction_types = ['History & Culture', 'Natural Scenery', 'Theme Park', 'Museum', 'Landmark']
         attractions = []
 
         for i in range(5):
             attraction = {
-                'name': f"{city}景点{i+1}",
+                'name': f"{city} Attraction #{i+1}",
                 'type': random.choice(attraction_types),
                 'rating': round(random.uniform(4.0, 5.0), 1),
                 'price': random.randint(0, 200),
-                'address': f"{city}市景区{i+1}号"
+                'address': f"{city} Scenic Area #{i+1}"
             }
             attractions.append(attraction)
 
         return attractions
 
     def _search_hotels_amap(self, city: str) -> List[Dict]:
-        """使用高德地图API搜索酒店"""
+        """Use Gaode Maps API to search for hotels"""
         try:
             url = "https://restapi.amap.com/v3/place/text"
             params = {
                 'key': self.amap_key,
-                'keywords': '酒店',
+                'keywords': 'Hotel',
                 'city': city,
-                'types': '100100',  # 酒店类型
+                'types': '100100',  # Hotel Type
                 'offset': 20
             }
 
@@ -608,12 +1311,12 @@ class TravelTools:
 
                 return hotels
         except Exception as e:
-            print(f"高德API调用失败: {e}")
+            print(f"Gaode API call failed: {e}")
 
         return []
 
     def _get_weather_amap(self, city: str) -> Dict:
-        """使用高德地图API获取天气"""
+        """Use Gaode Maps API to get weather"""
         try:
             url = "https://restapi.amap.com/v3/weather/weatherInfo"
             params = {
@@ -634,7 +1337,7 @@ class TravelTools:
                         'city': forecast['city'],
                         'current': {
                             'temperature': current.get('daytemp', 20),
-                            'weather': current.get('dayweather', '晴'),
+                            'weather': current.get('dayweather', 'Sunny'),
                             'humidity': random.randint(40, 80),
                             'wind_speed': current.get('daypower', '≤3')
                         },
@@ -650,51 +1353,51 @@ class TravelTools:
                         ]
                     }
         except Exception as e:
-            print(f"天气API调用失败: {e}")
+            print(f"Weather API call failed: {e}")
 
-        return self.get_weather(city)  # 降级到模拟数据
+        return self.get_weather(city)  # Fallback to mock data
 
 
-# 测试
+# Testing
 if __name__ == "__main__":
     tools = TravelTools()
 
-    # 测试酒店搜索
-    print("\n测试酒店搜索（带筛选）:")
+    # Test hotel search
+    print("\nTesting Hotel Search (with filtering):")
     hotels = tools.search_hotels(
-        city="北京",
+        city="Beijing",
         checkin_date="2025-12-01",
         checkout_date="2025-12-03",
-        requirements=["停车场", "游泳池"]
+        requirements=["Parking", "Swimming Pool"]
     )
-    print(f"找到 {len(hotels)} 家符合条件的酒店")
+    print(f"Found {len(hotels)} hotels matching criteria")
     if hotels:
-        print(f"第一家: {hotels[0]['name']}")
-        print(f"  设施: {hotels[0]['amenities']}")
+        print(f"First hotel: {hotels[0]['name']}")
+        print(f"  Amenities: {hotels[0]['amenities']}")
 
-    # 测试航班搜索
-    print("\n测试航班搜索:")
-    flights = tools.search_flights("北京", "上海", "2025-12-01")
-    print(f"找到 {len(flights)} 个航班")
+    # Test flight search
+    print("\nTesting Flight Search:")
+    flights = tools.search_flights("Beijing", "Shanghai", "2025-12-01")
+    print(f"Found {len(flights)} flights")
     if flights:
         flight = flights[0]
-        print(f"第一个航班: {flight['carrier_code']}{flight['flight_number']}")
-        print(f"  时间: {flight['departure']} -> {flight['arrival']}")
-        print(f"  价格: ¥{flight['total_price']}")
+        print(f"First flight: {flight['carrier_code']}{flight['flight_number']}")
+        print(f"  Time: {flight['departure']} -> {flight['arrival']}")
+        print(f"  Price: ¥{flight['total_price']}")
 
-    # 测试门票查询
-    print("\n测试门票查询:")
-    ticket = tools.get_ticket_info("迪士尼")
+    # Test ticket query
+    print("\nTesting Ticket Query:")
+    ticket = tools.get_ticket_info("迪士尼") # Keep Chinese key for mock data lookup
     if ticket['success']:
         info = ticket['data']
         print(f"{info['name']}: ¥{info.get('regular_price', info.get('adult_price'))}")
-        print(f"开放时间: {info['opening_hours']}")
+        print(f"Opening Hours: {info['opening_hours']}")
 
-    # 测试行程规划
-    print("\n测试行程规划:")
-    itinerary = tools.plan_itinerary("上海", 3, 5000, ["文化", "美食"])
-    print(f"目的地: {itinerary['destination']}")
-    print(f"天数: {itinerary['days']}天")
-    print(f"第一天行程:")
+    # Test itinerary planning
+    print("\nTesting Itinerary Planning:")
+    itinerary = tools.plan_itinerary("Shanghai", 3, 5000, ["Culture", "Food"])
+    print(f"Destination: {itinerary['destination']}")
+    print(f"Days: {itinerary['days']} days")
+    print(f"Day 1 Schedule:")
     for activity in itinerary['daily_plans'][0]['morning']:
         print(f"  {activity}")

@@ -1,7 +1,6 @@
 """
-Amadeus API服务 - 完整AI增强版
-处理航班和酒店搜索，包含AI增强功能补充缺失数据
-
+Amadeus API Service - Complete AI Enhanced Version
+Handles flight and hotel searches, includes AI enhancement to fill missing data.
 """
 import requests
 from datetime import datetime, timedelta
@@ -14,41 +13,41 @@ from config.config import Config
 
 class AmadeusService:
     """
-    Amadeus旅行服务（完整AI增强版）
-    提供航班和酒店搜索功能，智能补充缺失数据
+    Amadeus Travel Service (Complete AI Enhanced Version)
+    Provides flight and hotel search functions, intelligently fills missing data.
     """
 
     def __init__(self, deepseek_client=None):
-        """初始化Amadeus服务"""
-        # API配置
+        """Initialize Amadeus Service"""
+        # API Configuration
         self.client_id = Config.AMADEUS_CLIENT_ID
         self.client_secret = Config.AMADEUS_CLIENT_SECRET
         self.base_url = "https://test.api.amadeus.com"
 
-        # Token管理
+        # Token Management
         self.access_token = None
         self.token_expires_at = None
 
-        # AI增强
+        # AI Enhancement
         self.deepseek_client = deepseek_client
 
-        print("✅ Amadeus服务初始化完成（AI增强）")
+        print("✅ Amadeus Service Initialized (AI Enhanced)")
 
-    # ==================== 航班搜索（AI增强版）====================
+    # ==================== Flight Search (AI Enhanced) ====================
 
     def search_flights(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        搜索航班（AI增强版）
-        自动补充缺失的航班信息
+        Search Flights (AI Enhanced)
+        Automatically fills missing flight information.
         """
         try:
             origin = params['origin']
             destination = params['destination']
             date = params['departure_date']
 
-            print(f"\n✈️  搜索航班: {origin} → {destination} ({date})")
+            print(f"\n✈️  Searching Flights: {origin} → {destination} ({date})")
 
-            # 调用真实API
+            # Call Real API
             endpoint = f"{self.base_url}/v2/shopping/flight-offers"
 
             api_params = {
@@ -69,10 +68,10 @@ class AmadeusService:
                     'success': False,
                     'data': [],
                     'count': 0,
-                    'message': f"搜索失败: {result['error']}"
+                    'message': f"Search failed: {result['error']}"
                 }
 
-            # 提取并增强航班数据
+            # Extract and enhance flight data
             flights = result.get('data', [])
             enhanced_flights = []
             ai_enhanced_count = 0
@@ -83,16 +82,16 @@ class AmadeusService:
                 if is_ai_enhanced:
                     ai_enhanced_count += 1
 
-            print(f"✅ 找到 {len(enhanced_flights)} 个航班")
+            print(f"✅ Found {len(enhanced_flights)} flights")
             if ai_enhanced_count > 0:
-                print(f"   💡 AI增强了 {ai_enhanced_count} 个航班的数据")
+                print(f"   💡 AI enhanced data for {ai_enhanced_count} flights")
 
             return {
                 'success': True,
                 'data': enhanced_flights,
                 'count': len(enhanced_flights),
                 'ai_enhanced_count': ai_enhanced_count,
-                'message': f"找到 {len(enhanced_flights)} 个航班"
+                'message': f"Found {len(enhanced_flights)} flights"
             }
 
         except KeyError as e:
@@ -100,20 +99,20 @@ class AmadeusService:
                 'success': False,
                 'data': [],
                 'count': 0,
-                'message': f"缺少必要参数: {e}"
+                'message': f"Missing required parameters: {e}"
             }
         except Exception as e:
-            print(f"❌ 航班搜索错误: {e}")
+            print(f"❌ Flight search error: {e}")
             return {
                 'success': False,
                 'data': [],
                 'count': 0,
-                'message': f"搜索错误: {str(e)}"
+                'message': f"Search error: {str(e)}"
             }
 
     def _enhance_flight_data(self, flight: Dict) -> tuple:
         """
-        增强航班数据，补充缺失字段
+        Enhance flight data, fill missing fields.
 
         Returns:
             (enhanced_flight, is_ai_enhanced)
@@ -128,12 +127,12 @@ class AmadeusService:
             first_segment = segments[0]
             last_segment = segments[-1]
 
-            # 获取舱位和行李信息
+            # Get cabin and baggage info
             traveler_pricing = flight.get('travelerPricings', [{}])[0]
             fare_details = traveler_pricing.get('fareDetailsBySegment', [{}])[0]
             cabin_class = fare_details.get('cabin', 'ECONOMY')
 
-            # 基础数据
+            # Basic Data
             enhanced = {
                 'id': flight.get('id'),
                 'source': flight.get('source', 'GDS'),
@@ -158,14 +157,14 @@ class AmadeusService:
                 'aircraft': first_segment.get('aircraft', {}).get('code'),
                 'duration': itinerary.get('duration'),
                 'numberOfStops': len(segments) - 1,
-                'cabinClass': cabin_class  # 从API返回的数据中获取
+                'cabinClass': cabin_class  # Obtained from API response
             }
 
-            # 检查缺失字段并AI补充
+            # Check for missing fields and use AI to fill
             is_ai_enhanced = False
             missing_fields = []
 
-            # 检查关键字段
+            # Check critical fields
             if not enhanced.get('aircraft'):
                 missing_fields.append('aircraft')
             if not enhanced['departure'].get('terminal'):
@@ -173,14 +172,14 @@ class AmadeusService:
             if not enhanced['arrival'].get('terminal'):
                 missing_fields.append('arrival_terminal')
 
-            # 获取行李额度
+            # Get baggage allowance
             enhanced['includedCheckedBags'] = fare_details.get('includedCheckedBags', {}).get('quantity')
             enhanced['cabin'] = cabin_class
 
             if not enhanced.get('includedCheckedBags'):
                 missing_fields.append('baggage')
 
-            # 如果有缺失字段且有AI客户端，使用AI补充
+            # If fields are missing and AI client exists, use AI to enhance
             if missing_fields and self.deepseek_client:
                 ai_data = self._ai_enhance_flight(enhanced, missing_fields)
                 if ai_data:
@@ -192,11 +191,11 @@ class AmadeusService:
             return enhanced, is_ai_enhanced
 
         except Exception as e:
-            print(f"⚠️  航班数据增强失败: {e}")
+            print(f"⚠️  Flight data enhancement failed: {e}")
             return flight, False
 
     def _ai_enhance_flight(self, flight_data: Dict, missing_fields: List[str]) -> Optional[Dict]:
-        """使用AI补充缺失的航班信息"""
+        """Use AI to fill missing flight information"""
         if not self.deepseek_client:
             return None
 
@@ -205,35 +204,35 @@ class AmadeusService:
             aircraft_code = flight_data.get('aircraft', '')
             cabin_class = flight_data.get('cabinClass', 'ECONOMY')
 
-            prompt = f"""为航班补充缺失信息。
-航班: {carrier}{flight_data.get('number', '')}
-机型: {aircraft_code if aircraft_code else '未知'}
-舱位: {cabin_class}
+            prompt = f"""Supply missing information for the flight.
+Flight: {carrier}{flight_data.get('number', '')}
+Aircraft: {aircraft_code if aircraft_code else 'Unknown'}
+Cabin: {cabin_class}
 
-缺失字段: {', '.join(missing_fields)}
+Missing Fields: {', '.join(missing_fields)}
 
-返回JSON格式，只包含缺失字段的合理值：
+Return in JSON format, containing only reasonable values for missing fields:
 {{
-    "aircraft": "机型代码（如B787-8、A350-900）",
-    "departure_terminal": "航站楼（如T1、T2或null）",
-    "arrival_terminal": "航站楼",
-    "includedCheckedBags": "托运行李件数（1-3）",
+    "aircraft": "Aircraft Type Code (e.g., B787-8, A350-900)",
+    "departure_terminal": "Terminal (e.g., T1, T2 or null)",
+    "arrival_terminal": "Terminal",
+    "includedCheckedBags": "Number of checked bags (1-3)",
     "amenities": [
-        {{"service": "服务名", "isChargeable": true/false}}
+        {{"service": "Service Name", "isChargeable": true/false}}
     ]
 }}
 
-注意：
-- 如果机型已知就保持，如果未知则根据航司和航线推测
-- 行李额度要符合舱位标准（经济舱1-2件，商务舱2-3件）
-- 设施要符合机型和航司特点
+Notes:
+- If aircraft is known, keep it; if unknown, infer based on airline and route.
+- Baggage allowance should match cabin class standards (Economy 1-2, Business 2-3).
+- Amenities should match aircraft and airline characteristics.
 
-只返回JSON，不要其他内容。"""
+Return only JSON, no other content."""
 
             response = self.deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,  # 低温度保证准确性
+                temperature=0.3,  # Low temperature ensures accuracy
                 max_tokens=500
             )
 
@@ -242,21 +241,21 @@ class AmadeusService:
 
             if json_match:
                 ai_data = json.loads(json_match.group())
-                print(f"   💡 AI补充了字段: {', '.join(missing_fields)}")
+                print(f"   💡 AI filled fields: {', '.join(missing_fields)}")
                 return ai_data
 
             return None
 
         except Exception as e:
-            print(f"⚠️  AI增强失败: {e}")
+            print(f"⚠️  AI enhancement failed: {e}")
             return None
 
-    # ==================== 酒店搜索（已有AI增强）====================
+    # ==================== Hotel Search (AI Enhanced) ====================
 
     def search_hotels(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        搜索酒店（带AI增强）
-        （保持原来的实现，已经有AI增强）
+        Search Hotels (With AI Enhancement)
+        (Keeps original implementation, already AI enhanced)
         """
         try:
             lat = params['latitude']
@@ -264,10 +263,10 @@ class AmadeusService:
             check_in = params['check_in_date']
             check_out = params['check_out_date']
 
-            print(f"\n🏨 搜索酒店: ({lat}, {lon})")
-            print(f"   日期: {check_in} → {check_out}")
+            print(f"\n🏨 Searching Hotels: ({lat}, {lon})")
+            print(f"   Dates: {check_in} → {check_out}")
 
-            # 步骤1: 搜索酒店基本信息
+            # Step 1: Search basic hotel info
             hotels = self._search_hotels_basic(params)
 
             if not hotels:
@@ -278,18 +277,18 @@ class AmadeusService:
                     'reviews': [],
                     'count': 0,
                     'ai_enhanced': False,
-                    'message': '未找到酒店'
+                    'message': 'No hotels found'
                 }
 
-            print(f"✅ 找到 {len(hotels)} 个酒店")
+            print(f"✅ Found {len(hotels)} hotels")
 
-            # 步骤2: 获取房间报价（真实API + AI补充）
+            # Step 2: Get room offers (Real API + AI Supplement)
             offers, ai_offer_count = self._get_hotel_offers(hotels, params)
-            print(f"   💰 获取了 {len(offers)} 个报价 (AI生成: {ai_offer_count})")
+            print(f"   💰 Retrieved {len(offers)} offers (AI Generated: {ai_offer_count})")
 
-            # 步骤3: 获取酒店评价（真实API + AI补充）
+            # Step 3: Get hotel reviews (Real API + AI Supplement)
             reviews, ai_review_count = self._get_hotel_reviews(hotels)
-            print(f"   ⭐ 获取了 {len(reviews)} 个评价 (AI生成: {ai_review_count})")
+            print(f"   ⭐ Retrieved {len(reviews)} reviews (AI Generated: {ai_review_count})")
 
             ai_enhanced = ai_offer_count > 0 or ai_review_count > 0
 
@@ -300,11 +299,11 @@ class AmadeusService:
                 'reviews': reviews,
                 'count': len(hotels),
                 'ai_enhanced': ai_enhanced,
-                'message': f"找到 {len(hotels)} 个酒店"
+                'message': f"Found {len(hotels)} hotels"
             }
 
         except Exception as e:
-            print(f"❌ 酒店搜索错误: {e}")
+            print(f"❌ Hotel search error: {e}")
             return {
                 'success': False,
                 'hotels': [],
@@ -312,11 +311,11 @@ class AmadeusService:
                 'reviews': [],
                 'count': 0,
                 'ai_enhanced': False,
-                'message': f"搜索错误: {str(e)}"
+                'message': f"Search error: {str(e)}"
             }
 
     def _search_hotels_basic(self, params: Dict) -> List[Dict]:
-        """搜索酒店基本信息"""
+        """Search basic hotel information"""
         endpoint = f"{self.base_url}/v1/reference-data/locations/hotels/by-geocode"
 
         api_params = {
@@ -330,7 +329,7 @@ class AmadeusService:
         return result.get('data', []) if 'error' not in result else []
 
     def _get_hotel_offers(self, hotels: List[Dict], params: Dict) -> tuple:
-        """获取酒店报价（真实API + AI补充）"""
+        """Get hotel offers (Real API + AI Supplement)"""
         all_offers = []
         ai_count = 0
 
@@ -360,7 +359,7 @@ class AmadeusService:
         return all_offers, ai_count
 
     def _get_hotel_reviews(self, hotels: List[Dict]) -> tuple:
-        """获取酒店评价（真实API + AI补充）"""
+        """Get hotel reviews (Real API + AI Supplement)"""
         all_reviews = []
         ai_count = 0
 
@@ -384,7 +383,7 @@ class AmadeusService:
         return all_reviews, ai_count
 
     def _generate_hotel_offer(self, hotel: Dict, params: Dict) -> Optional[Dict]:
-        """使用AI生成酒店报价"""
+        """Use AI to generate hotel offers"""
         if not self.deepseek_client:
             return None
 
@@ -392,19 +391,19 @@ class AmadeusService:
             hotel_id = hotel.get('hotelId')
             hotel_name = hotel.get('name', 'Hotel')
 
-            prompt = f"""为酒店生成合理的房间报价（演示数据）。
-酒店: {hotel_name}
-入住: {params.get('check_in_date')}
-退房: {params.get('check_out_date')}
+            prompt = f"""Generate reasonable room offers for the hotel (Demo Data).
+Hotel: {hotel_name}
+Check-in: {params.get('check_in_date')}
+Check-out: {params.get('check_out_date')}
 
-返回JSON：
+Return JSON:
 {{
-    "room_type": "房型名称",
-    "price": 每晚价格USD（100-400）,
-    "description": "30字描述"
+    "room_type": "Room Type Name",
+    "price": Price per night in USD (100-400),
+    "description": "30-word description"
 }}
 
-只返回JSON。"""
+Return only JSON."""
 
             response = self.deepseek_client.chat.completions.create(
                 model="deepseek-chat",
@@ -442,19 +441,19 @@ class AmadeusService:
             return None
 
         except Exception as e:
-            print(f"⚠️  AI生成报价失败: {e}")
+            print(f"⚠️  AI offer generation failed: {e}")
             return None
 
     def _generate_hotel_review(self, hotel: Dict) -> Optional[Dict]:
-        """使用AI生成酒店评价"""
+        """Use AI to generate hotel reviews"""
         if not self.deepseek_client:
             return None
 
         try:
             hotel_id = hotel.get('hotelId')
 
-            prompt = f"""生成酒店评价数据。
-返回JSON：
+            prompt = f"""Generate hotel sentiment data.
+Return JSON:
 {{
     "overall_rating": 60-95,
     "number_of_reviews": 80-300,
@@ -464,7 +463,7 @@ class AmadeusService:
     "location": 60-95
 }}
 
-只返回JSON。"""
+Return only JSON."""
 
             response = self.deepseek_client.chat.completions.create(
                 model="deepseek-chat",
@@ -495,18 +494,18 @@ class AmadeusService:
             return None
 
         except Exception as e:
-            print(f"⚠️  AI生成评价失败: {e}")
+            print(f"⚠️  AI review generation failed: {e}")
             return None
 
-    # ==================== Token管理 ====================
+    # ==================== Token Management ====================
 
     def _get_amadeus_token(self) -> str:
-        """获取Amadeus访问令牌"""
+        """Get Amadeus Access Token"""
         if self.access_token and self.token_expires_at:
             if datetime.now() < self.token_expires_at:
                 return self.access_token
 
-        print("🔑 获取Amadeus令牌...")
+        print("🔑 Getting Amadeus Token...")
 
         url = f"{self.base_url}/v1/security/oauth2/token"
         data = {
@@ -525,14 +524,14 @@ class AmadeusService:
             expires_in = token_data.get('expires_in', 1799)
             self.token_expires_at = datetime.now() + timedelta(seconds=expires_in - 300)
 
-            print("✅ 令牌获取成功")
+            print("✅ Token acquired successfully")
             return self.access_token
 
         except Exception as e:
-            raise Exception(f"无法获取Amadeus令牌: {str(e)}")
+            raise Exception(f"Cannot get Amadeus token: {str(e)}")
 
     def _get_headers(self) -> Dict[str, str]:
-        """获取API请求头"""
+        """Get API Request Headers"""
         access_token = self._get_amadeus_token()
         return {
             "Authorization": f"Bearer {access_token}",
@@ -540,13 +539,13 @@ class AmadeusService:
         }
 
     def _call_api(self, endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """通用API调用"""
+        """Generic API Call"""
         try:
             headers = self._get_headers()
             response = requests.get(endpoint, headers=headers, params=params, timeout=30)
 
             if response.status_code == 401:
-                print("🔄 Token过期，重新获取...")
+                print("🔄 Token expired, refreshing...")
                 self.access_token = None
                 headers = self._get_headers()
                 response = requests.get(endpoint, headers=headers, params=params, timeout=30)
@@ -555,5 +554,5 @@ class AmadeusService:
             return response.json()
 
         except requests.exceptions.RequestException as e:
-            print(f"❌ API请求错误: {e}")
+            print(f"❌ API Request Error: {e}")
             return {"error": str(e)}

@@ -1,59 +1,59 @@
 """
-预订工具 - 封装Amadeus API
-为Agent提供简单的预订接口
-
+Booking Tools - Amadeus API Wrapper
+Provides simple booking interfaces for the Agent.
 """
 from backend.booking import AmadeusService
 from config.config import Config
+from datetime import date, timedelta
 
 
 class BookingTool:
     """
-    预订工具类
-    封装航班和酒店搜索功能，提供给Agent使用
+    Booking Tool Class
+    Wraps flight and hotel search functionality for Agent use.
     """
 
     def __init__(self):
-        """初始化预订工具"""
-        # 初始化DeepSeek客户端（用于AI增强）
+        """Initialize Booking Tool"""
+        # Initialize DeepSeek client (for AI enhancement)
         self.deepseek_client = Config.get_deepseek_client()
 
-        # 创建Amadeus服务
+        # Create Amadeus service
         self.amadeus = AmadeusService(self.deepseek_client)
 
-        print("✅ 预订工具初始化完成")
+        print("✅ Booking Tool Initialization Complete")
 
-    # ==================== 航班搜索 ====================
+    # ==================== Flight Search ====================
 
     def search_flights(self, origin: str, destination: str, date: str, **kwargs) -> dict:
         """
-        搜索航班
+        Search for flights
 
         Args:
-            origin: 出发地IATA代码（如'HKG'）
-            destination: 目的地IATA代码（如'NRT'）
-            date: 出发日期（YYYY-MM-DD格式）
-            **kwargs: 其他可选参数
-                - adults: 成人数量，默认1
-                - travel_class: 舱位（ECONOMY/BUSINESS/FIRST），默认ECONOMY
-                - non_stop: 是否只要直飞，默认True
-                - max_results: 最多返回几个结果，默认10
+            origin: Departure IATA code (e.g., 'HKG')
+            destination: Destination IATA code (e.g., 'NRT')
+            date: Departure date (YYYY-MM-DD format)
+            **kwargs: Other optional parameters
+                - adults: Number of adults, default 1
+                - travel_class: Cabin class (ECONOMY/BUSINESS/FIRST), default ECONOMY
+                - non_stop: Whether to search for non-stop flights only, default True
+                - max_results: Maximum number of results to return, default 10
 
         Returns:
             {
                 'success': True/False,
-                'data': [...],      # 航班列表
-                'count': 5,         # 找到的航班数
-                'message': '找到5个航班'
+                'data': [...],      # List of flights
+                'count': 5,         # Number of flights found
+                'message': 'Found 5 flights'
             }
 
         Example:
             >>> tool = BookingTool()
             >>> result = tool.search_flights('HKG', 'NRT', '2025-12-01')
             >>> if result['success']:
-            >>>     print(f"找到 {result['count']} 个航班")
+            >>>     print(f"Found {result['count']} flights")
             >>>     for flight in result['data']:
-            >>>         print(f"价格: ${flight['price']['total']}")
+            >>>         print(f"Price: ${flight['price']['total']}")
         """
         params = {
             'origin': origin,
@@ -67,31 +67,31 @@ class BookingTool:
 
         return self.amadeus.search_flights(params)
 
-    # ==================== 酒店搜索 ====================
+    # ==================== Hotel Search ====================
 
     def search_hotels(self, latitude: float, longitude: float,
                      check_in: str, check_out: str, **kwargs) -> dict:
         """
-        搜索酒店（通过经纬度）
+        Search for hotels (by coordinates)
 
         Args:
-            latitude: 纬度
-            longitude: 经度
-            check_in: 入住日期（YYYY-MM-DD格式）
-            check_out: 退房日期（YYYY-MM-DD格式）
-            **kwargs: 其他可选参数
-                - radius: 搜索半径（公里），默认5
-                - adults: 成人数量，默认2
+            latitude: Latitude
+            longitude: Longitude
+            check_in: Check-in date (YYYY-MM-DD format)
+            check_out: Check-out date (YYYY-MM-DD format)
+            **kwargs: Other optional parameters
+                - radius: Search radius (kilometers), default 5
+                - adults: Number of adults, default 2
 
         Returns:
             {
                 'success': True/False,
-                'hotels': [...],        # 酒店基本信息
-                'offers': [...],        # 房间报价
-                'reviews': [...],       # 酒店评价
-                'count': 12,            # 找到的酒店数
-                'ai_enhanced': True,    # 是否使用了AI增强
-                'message': '找到12个酒店'
+                'hotels': [...],        # Basic hotel information
+                'offers': [...],        # Room offers
+                'reviews': [...],       # Hotel reviews
+                'count': 12,            # Number of hotels found
+                'ai_enhanced': True,    # Whether AI enhancement was used
+                'message': 'Found 12 hotels'
             }
 
         Example:
@@ -105,7 +105,7 @@ class BookingTool:
             >>> if result['success']:
             >>>     print(result['message'])
             >>>     for hotel in result['hotels']:
-            >>>         print(f"酒店: {hotel['name']}")
+            >>>         print(f"Hotel: {hotel['name']}")
         """
         params = {
             'latitude': latitude,
@@ -120,24 +120,24 @@ class BookingTool:
 
     def search_hotels_by_city(self, city: str, check_in: str, check_out: str, **kwargs) -> dict:
         """
-        搜索酒店（通过城市名）
+        Search for hotels (by city name)
 
         Args:
-            city: 城市名（中文或英文，如'东京'或'Tokyo'）
-            check_in: 入住日期（YYYY-MM-DD格式）
-            check_out: 退房日期（YYYY-MM-DD格式）
-            **kwargs: 其他可选参数（同search_hotels）
+            city: City name (e.g., 'Tokyo' or 'Shanghai')
+            check_in: Check-in date (YYYY-MM-DD format)
+            check_out: Check-out date (YYYY-MM-DD format)
+            **kwargs: Other optional parameters (same as search_hotels)
 
         Returns:
-            同search_hotels的返回格式
+            Same return format as search_hotels
 
         Example:
             >>> tool = BookingTool()
-            >>> result = tool.search_hotels_by_city('东京', '2025-12-01', '2025-12-05')
+            >>> result = tool.search_hotels_by_city('Tokyo', '2025-12-01', '2025-12-05')
         """
-        # 城市坐标映射表
+        # City coordinate mapping table
         CITY_COORDS = {
-            # 日本
+            # Japan
             '东京': (35.6762, 139.6503),
             'Tokyo': (35.6762, 139.6503),
             '大阪': (34.6937, 135.5023),
@@ -145,7 +145,7 @@ class BookingTool:
             '京都': (35.0116, 135.7681),
             'Kyoto': (35.0116, 135.7681),
 
-            # 中国
+            # China
             '北京': (39.9042, 116.4074),
             'Beijing': (39.9042, 116.4074),
             '上海': (31.2304, 121.4737),
@@ -157,7 +157,7 @@ class BookingTool:
             '深圳': (22.5431, 114.0579),
             'Shenzhen': (22.5431, 114.0579),
 
-            # 其他热门城市
+            # Other Popular Cities
             '新加坡': (1.3521, 103.8198),
             'Singapore': (1.3521, 103.8198),
             '曼谷': (13.7563, 100.5018),
@@ -165,7 +165,7 @@ class BookingTool:
             '首尔': (37.5665, 126.9780),
             'Seoul': (37.5665, 126.9780),
 
-            # 可以继续添加更多城市...
+            # More cities can be added...
         }
 
         if city in CITY_COORDS:
@@ -179,21 +179,21 @@ class BookingTool:
                 'reviews': [],
                 'count': 0,
                 'ai_enhanced': False,
-                'message': f"未找到城市'{city}'的坐标，请使用经纬度搜索或添加该城市"
+                'message': f"Coordinates for city '{city}' not found. Please search using coordinates or add the city."
             }
 
-    # ==================== 便捷方法 ====================
+    # ==================== Convenience Methods ====================
 
     def get_flight_price(self, origin: str, destination: str, date: str) -> dict:
         """
-        快速获取航班价格（只返回最便宜的）
+        Quickly get flight price (returns only the cheapest)
 
         Returns:
             {
                 'success': True/False,
                 'cheapest_price': 500.00,
                 'currency': 'USD',
-                'message': '最低价格: $500.00'
+                'message': 'Cheapest price: $500.00'
             }
         """
         result = self.search_flights(origin, destination, date, max_results=5)
@@ -206,30 +206,28 @@ class BookingTool:
                     'success': True,
                     'cheapest_price': cheapest,
                     'currency': 'USD',
-                    'message': f"最低价格: ${cheapest:.2f}"
+                    'message': f"Cheapest price: ${cheapest:.2f}"
                 }
 
         return {
             'success': False,
             'cheapest_price': None,
             'currency': 'USD',
-            'message': '未找到价格信息'
+            'message': 'No price information found'
         }
 
     def get_hotel_count(self, city: str) -> dict:
         """
-        快速获取某城市的酒店数量
+        Quickly get the number of hotels in a city
 
         Returns:
             {
                 'success': True/False,
                 'count': 12,
-                'message': '找到12个酒店'
+                'message': 'Found 12 hotels'
             }
         """
-        from datetime import date, timedelta
-
-        # 使用明天作为入住日期
+        # Use tomorrow as check-in date
         tomorrow = (date.today() + timedelta(days=1)).strftime('%Y-%m-%d')
         checkout = (date.today() + timedelta(days=2)).strftime('%Y-%m-%d')
 
