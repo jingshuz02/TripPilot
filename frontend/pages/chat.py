@@ -1,9 +1,9 @@
 """
-TripPilot 聊天界面 - 增强版
-新增功能:
-1. 对话管理（新建、切换、重命名、删除）
-2. 优化性能，减少卡顿
-3. 改进的消息处理流程
+TripPilot Chat Interface - 修复版
+解决问题：
+1. KeyError: 'preferences' - 统一数据结构
+2. 界面卡顿 - 优化 rerun 逻辑
+3. 缓存问题 - 添加版本控制
 """
 
 import streamlit as st
@@ -11,7 +11,7 @@ import requests
 from datetime import datetime, timedelta
 import json
 
-# ==================== 导入自定义组件 ====================
+# ==================== Import Custom Components ====================
 try:
     from components.hotel_card import display_hotel_card_v2, display_hotel_list_v2
 except ImportError:
@@ -29,25 +29,25 @@ except ImportError:
     display_flight_card_v2 = None
     display_flight_list_v2 = None
 
-# ==================== 页面配置 ====================
+# ==================== Page Configuration ====================
 st.set_page_config(
-    page_title="TripPilot - 智能旅行助手",
+    page_title="TripPilot - Intelligent Travel Assistant",
     page_icon="💬",
     layout="wide"
 )
 
-# ==================== 初始化会话状态 ====================
+# ==================== Initialize Session State ====================
 def init_session_state():
-    """初始化所有必要的会话状态"""
+    """Initialize all necessary session states"""
     from uuid import uuid4
 
-    # ========== 对话管理 ==========
+    # ========== Conversation Management (统一数据结构) ==========
     if "conversations" not in st.session_state:
         default_conv_id = str(uuid4())[:8]
         st.session_state.conversations = {
             default_conv_id: {
                 "id": default_conv_id,
-                "name": "新对话",
+                "name": "New Conversation",
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "messages": [],
@@ -62,18 +62,36 @@ def init_session_state():
         }
         st.session_state.current_conversation_id = default_conv_id
 
-    # 确保当前对话ID有效
+    # ✅ 修复旧对话数据结构（向后兼容）
+    for conv_id, conv in st.session_state.conversations.items():
+        if "preferences" not in conv:
+            conv["preferences"] = {
+                "destination": conv.get("destination", ""),
+                "days": conv.get("days", 3),
+                "budget": conv.get("budget", 5000),
+                "start_date": conv.get("start_date", datetime.now().date()),
+                "end_date": conv.get("end_date", None)
+            }
+        # 清理旧字段
+        conv.pop("destination", None)
+        conv.pop("start_date", None)
+        conv.pop("end_date", None)
+        conv.pop("days", None)
+        conv.pop("budget", None)
+
+    # Ensure current conversation ID is valid
     if "current_conversation_id" not in st.session_state:
         st.session_state.current_conversation_id = list(st.session_state.conversations.keys())[0]
     elif st.session_state.current_conversation_id not in st.session_state.conversations:
         st.session_state.current_conversation_id = list(st.session_state.conversations.keys())[0]
 
-    # 为兼容性保留旧的变量
+    # For backward compatibility
     current_conv = get_current_conversation()
-    if "messages" not in st.session_state:
-        st.session_state.messages = current_conv["messages"]
-    if "current_trip" not in st.session_state:
-        st.session_state.current_trip = current_conv["preferences"]
+    if current_conv:
+        if "messages" not in st.session_state:
+            st.session_state.messages = current_conv["messages"]
+        if "current_trip" not in st.session_state:
+            st.session_state.current_trip = current_conv["preferences"]
 
     if "orders" not in st.session_state:
         st.session_state.orders = []
@@ -81,15 +99,24 @@ def init_session_state():
     if "conversation_id" not in st.session_state:
         st.session_state.conversation_id = st.session_state.current_conversation_id
 
-# ==================== 对话管理函数 ====================
+    # ✅ 添加处理状态，避免重复处理
+    if "processing" not in st.session_state:
+        st.session_state.processing = False
+
+    # ✅ 添加最后一条消息ID，避免重复触发
+    if "last_message_id" not in st.session_state:
+        st.session_state.last_message_id = None
+
+
+# ==================== Conversation Management Functions ====================
 
 def create_new_conversation():
-    """创建新对话"""
+    """Create a new conversation"""
     from uuid import uuid4
     new_conv_id = str(uuid4())[:8]
     st.session_state.conversations[new_conv_id] = {
         "id": new_conv_id,
-        "name": f"新对话 {len(st.session_state.conversations) + 1}",
+        "name": f"New Conversation {len(st.session_state.conversations) + 1}",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "messages": [],
@@ -106,10 +133,10 @@ def create_new_conversation():
 
 
 def switch_conversation(conv_id: str):
-    """切换对话"""
+    """Switch conversation"""
     if conv_id in st.session_state.conversations:
         st.session_state.current_conversation_id = conv_id
-        # 同步消息和偏好设置
+        # Sync messages and preferences
         current_conv = st.session_state.conversations[conv_id]
         st.session_state.messages = current_conv["messages"]
         st.session_state.current_trip = current_conv["preferences"]
@@ -117,15 +144,15 @@ def switch_conversation(conv_id: str):
 
 
 def delete_conversation(conv_id: str):
-    """删除对话"""
+    """Delete conversation"""
     if len(st.session_state.conversations) <= 1:
-        st.error("❌ 至少需要保留一个对话")
+        st.error("❌ Must keep at least one conversation")
         return False
 
     if conv_id in st.session_state.conversations:
         del st.session_state.conversations[conv_id]
 
-        # 如果删除的是当前对话，切换到第一个对话
+        # If deleting current conversation, switch to first one
         if st.session_state.current_conversation_id == conv_id:
             first_conv_id = list(st.session_state.conversations.keys())[0]
             switch_conversation(first_conv_id)
@@ -135,7 +162,7 @@ def delete_conversation(conv_id: str):
 
 
 def rename_conversation(conv_id: str, new_name: str):
-    """重命名对话"""
+    """Rename conversation"""
     if conv_id in st.session_state.conversations:
         st.session_state.conversations[conv_id]["name"] = new_name
         st.session_state.conversations[conv_id]["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -144,20 +171,20 @@ def rename_conversation(conv_id: str, new_name: str):
 
 
 def get_current_conversation():
-    """获取当前对话"""
+    """Get current conversation"""
     conv_id = st.session_state.current_conversation_id
     return st.session_state.conversations.get(conv_id)
 
 
 def update_conversation_timestamp():
-    """更新当前对话的时间戳"""
+    """Update current conversation timestamp"""
     conv_id = st.session_state.current_conversation_id
     if conv_id in st.session_state.conversations:
         st.session_state.conversations[conv_id]["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 def save_message_to_conversation(role: str, content: str, **kwargs):
-    """将消息保存到当前对话"""
+    """Save message to current conversation"""
     current_conv = get_current_conversation()
     if current_conv:
         message = {"role": role, "content": content, **kwargs}
@@ -168,15 +195,15 @@ def save_message_to_conversation(role: str, content: str, **kwargs):
 
 init_session_state()
 
-# ==================== 样式定义 - 浅绿色主题 ====================
+# ==================== Style Definition - Light Green Theme ====================
 st.markdown("""
 <style>
-    /* 整体背景 */
+    /* Overall Background */
     .stApp {
         background-color: #f8f9fa;
     }
     
-    /* 用户消息样式 - 浅绿色 */
+    /* User Message Style - Light Green */
     .user-message {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
@@ -188,7 +215,7 @@ st.markdown("""
         animation: fadeIn 0.3s ease-in;
     }
     
-    /* AI消息样式 */
+    /* AI Message Style */
     .ai-message {
         background: white;
         border: 1px solid #e0e0e0;
@@ -201,13 +228,13 @@ st.markdown("""
         animation: fadeIn 0.3s ease-in;
     }
     
-    /* 动画效果 */
+    /* Animation Effect */
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
     }
     
-    /* 内容格式化 */
+    /* Content Formatting */
     .ai-message h1 { color: #10b981; font-size: 1.5rem; margin: 1rem 0; }
     .ai-message h2 { color: #059669; font-size: 1.3rem; margin: 0.8rem 0; }
     .ai-message h3 { color: #047857; font-size: 1.1rem; margin: 0.6rem 0; }
@@ -215,7 +242,7 @@ st.markdown("""
     .ai-message ul { margin: 0.5rem 0; padding-left: 1.5rem; }
     .ai-message li { margin: 0.3rem 0; line-height: 1.6; }
     
-    /* 侧边栏 - 浅绿色，宽度1.5倍 */
+    /* Sidebar - Light Green, 1.5x Width */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #6ee7b7 0%, #a7f3d0 100%);
         min-width: 350px !important;
@@ -231,12 +258,12 @@ st.markdown("""
         width: 350px !important;
     }
     
-    /* 调整主内容区域的左边距 */
+    /* Adjust Main Content Area Left Margin */
     .main .block-container {
         padding-left: 1rem;
     }
     
-    /* 侧边栏文字颜色增强可读性 */
+    /* Sidebar Text Color for Better Readability */
     [data-testid="stSidebar"] * {
         color: #065f46 !important;
     }
@@ -250,12 +277,12 @@ st.markdown("""
         font-weight: 500 !important;
     }
     
-    /* 标题区域 */
+    /* Title Area */
     .main .block-container {
         padding-top: 2rem;
     }
     
-    /* 侧边栏输入框样式 */
+    /* Sidebar Input Style */
     [data-testid="stSidebar"] input,
     [data-testid="stSidebar"] textarea,
     [data-testid="stSidebar"] select {
@@ -264,7 +291,7 @@ st.markdown("""
         color: #111827 !important;
     }
     
-    /* 侧边栏按钮样式 */
+    /* Sidebar Button Style */
     [data-testid="stSidebar"] button {
         background-color: white !important;
         color: #047857 !important;
@@ -276,7 +303,7 @@ st.markdown("""
         color: white !important;
     }
     
-    /* 信息卡片 */
+    /* Info Card */
     .info-card {
         background: linear-gradient(135deg, #f0fdf4 0%, #d1fae5 100%);
         border-radius: 15px;
@@ -285,7 +312,7 @@ st.markdown("""
         border: 1px solid #10b981;
     }
     
-    /* 按钮样式 */
+    /* Button Style */
     .stButton>button {
         border-radius: 8px;
         transition: all 0.3s;
@@ -299,7 +326,7 @@ st.markdown("""
         color: white;
     }
     
-    /* 侧边栏expander样式 */
+    /* Sidebar Expander Style */
     [data-testid="stSidebar"] .streamlit-expanderHeader {
         background-color: rgba(255, 255, 255, 0.7) !important;
         border: 1px solid #10b981 !important;
@@ -318,7 +345,7 @@ st.markdown("""
         border-top: none !important;
     }
     
-    /* 主要按钮样式 */
+    /* Primary Button Style */
     .stButton>button[kind="primary"] {
         background-color: #10b981;
         color: white;
@@ -328,7 +355,7 @@ st.markdown("""
         background-color: #059669;
     }
     
-    /* 侧边栏metric样式 */
+    /* Sidebar Metric Style */
     [data-testid="stSidebar"] [data-testid="stMetric"] {
         background-color: rgba(255, 255, 255, 0.8);
         padding: 10px;
@@ -345,14 +372,14 @@ st.markdown("""
         font-weight: 700 !important;
     }
     
-    /* 侧边栏成功/信息/错误消息 */
+    /* Sidebar Success/Info/Error Messages */
     [data-testid="stSidebar"] .stSuccess,
     [data-testid="stSidebar"] .stInfo,
     [data-testid="stSidebar"] .stError {
         background-color: rgba(255, 255, 255, 0.9) !important;
     }
     
-    /* 对话列表项样式 */
+    /* Conversation List Item Style */
     .conversation-item {
         padding: 12px;
         margin: 5px 0;
@@ -381,9 +408,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== API交互函数 ====================
+# ==================== API Interaction Functions ====================
 def call_backend_api(message: str) -> dict:
-    """调用后端API获取回复 - 优化版"""
+    """Call backend API to get response - Optimized version"""
     try:
         trip = st.session_state.current_trip
 
@@ -410,7 +437,7 @@ def call_backend_api(message: str) -> dict:
         else:
             return {
                 "action": "error",
-                "content": f"抱歉，服务器返回错误 (状态码: {response.status_code})",
+                "content": f"Sorry, server returned error (Status code: {response.status_code})",
                 "data": None,
                 "suggestions": []
             }
@@ -418,53 +445,53 @@ def call_backend_api(message: str) -> dict:
     except requests.exceptions.Timeout:
         return {
             "action": "error",
-            "content": "抱歉，请求超时。请稍后再试。",
+            "content": "Sorry, request timed out. Please try again later.",
             "data": None,
-            "suggestions": ["重新发送消息"]
+            "suggestions": ["Resend message"]
         }
     except requests.exceptions.ConnectionError:
         return {
             "action": "error",
-            "content": "无法连接到后端服务，请确保后端正在运行。",
+            "content": "Cannot connect to backend service. Please ensure the backend is running.",
             "data": None,
-            "suggestions": ["检查后端服务", "重新尝试"]
+            "suggestions": ["Check backend service", "Try again"]
         }
     except Exception as e:
         return {
             "action": "error",
-            "content": f"发生错误: {str(e)}",
+            "content": f"An error occurred: {str(e)}",
             "data": None,
             "suggestions": []
         }
 
 
-# ==================== 消息显示函数 ====================
+# ==================== Message Display Functions ====================
 def display_user_message(content: str):
-    """显示用户消息"""
+    """Display user message"""
     st.markdown(f"""
     <div class="user-message">
-        <strong>👤 您</strong><br>
+        <strong>👤 You</strong><br>
         {content}
     </div>
     """, unsafe_allow_html=True)
 
 
 def display_ai_message(message: dict, msg_idx: int = 0):
-    """显示AI消息"""
+    """Display AI message"""
     content = message.get("content", "")
     action = message.get("action", "")
     data = message.get("data", None)
     suggestions = message.get("suggestions", [])
 
-    # AI消息容器
+    # AI message container
     st.markdown(f"""
     <div class="ai-message">
-        <strong>🤖 AI助手</strong><br>
+        <strong>🤖 AI Assistant</strong><br>
         {content}
     </div>
     """, unsafe_allow_html=True)
 
-    # 显示数据卡片
+    # Display data cards
     if data:
         if action == "search_hotels" and isinstance(data, list):
             display_hotels(data, msg_idx)
@@ -473,13 +500,13 @@ def display_ai_message(message: dict, msg_idx: int = 0):
         elif action == "weather" and isinstance(data, dict):
             display_weather(data)
 
-    # 显示建议
+    # Display suggestions
     if suggestions:
         display_suggestions(suggestions, msg_idx)
 
 
 def display_hotels(hotels: list, msg_idx: int):
-    """显示酒店列表"""
+    """Display hotel list"""
     if display_hotel_list_v2:
         display_hotel_list_v2(hotels)
     else:
@@ -487,24 +514,24 @@ def display_hotels(hotels: list, msg_idx: int):
 
 
 def _display_hotels_fallback(hotels: list, msg_idx: int):
-    """酒店备用显示"""
-    st.subheader("🏨 推荐酒店")
+    """Hotel fallback display"""
+    st.subheader("🏨 Recommended Hotels")
     for idx, hotel in enumerate(hotels):
-        with st.expander(f"⭐ {hotel.get('name', 'Unknown')} - ¥{hotel.get('price', 0)}/晚", expanded=idx == 0):
+        with st.expander(f"⭐ {hotel.get('name', 'Unknown')} - ¥{hotel.get('price', 0)}/night", expanded=idx == 0):
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.write(f"**位置:** {hotel.get('location', 'N/A')}")
-                st.write(f"**地址:** {hotel.get('address', 'N/A')}")
-                st.write(f"**评分:** {'⭐' * int(hotel.get('rating', 0))}")
-                st.write(f"**设施:** {', '.join(hotel.get('amenities', []))}")
+                st.write(f"**Location:** {hotel.get('location', 'N/A')}")
+                st.write(f"**Address:** {hotel.get('address', 'N/A')}")
+                st.write(f"**Rating:** {'⭐' * int(hotel.get('rating', 0))}")
+                st.write(f"**Amenities:** {', '.join(hotel.get('amenities', []))}")
             with col2:
-                st.metric("价格", f"¥{hotel.get('price', 0)}/晚")
-                if st.button(f"预订", key=f"book_hotel_{msg_idx}_{idx}"):
+                st.metric("Price", f"¥{hotel.get('price', 0)}/night")
+                if st.button(f"Book", key=f"book_hotel_{msg_idx}_{idx}"):
                     add_to_orders("hotel", hotel)
 
 
 def display_flights(flights: list, msg_idx: int):
-    """显示航班列表"""
+    """Display flight list"""
     if display_flight_list_v2:
         display_flight_list_v2(flights)
     else:
@@ -512,8 +539,8 @@ def display_flights(flights: list, msg_idx: int):
 
 
 def _display_flights_fallback(flights: list, msg_idx: int):
-    """航班备用显示"""
-    st.subheader("✈️ 推荐航班")
+    """Flight fallback display"""
+    st.subheader("✈️ Recommended Flights")
     for idx, flight in enumerate(flights):
         with st.expander(
             f"{flight.get('carrier_name', 'Unknown')} {flight.get('flight_number', '')} - ¥{flight.get('price', 0)}",
@@ -521,21 +548,21 @@ def _display_flights_fallback(flights: list, msg_idx: int):
         ):
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.write(f"**出发:** {flight.get('departure_time', '')}")
-                st.write(f"**起飞地:** {flight.get('origin', 'N/A')}")
+                st.write(f"**Departure:** {flight.get('departure_time', '')}")
+                st.write(f"**Origin:** {flight.get('origin', 'N/A')}")
             with col2:
-                st.write(f"**到达:** {flight.get('arrival_time', '')}")
-                st.write(f"**目的地:** {flight.get('destination', 'N/A')}")
+                st.write(f"**Arrival:** {flight.get('arrival_time', '')}")
+                st.write(f"**Destination:** {flight.get('destination', 'N/A')}")
             with col3:
-                st.write(f"**时长:** {flight.get('duration', 'N/A')}")
-                st.write(f"**舱位:** {flight.get('cabin_class', 'N/A')}")
+                st.write(f"**Duration:** {flight.get('duration', 'N/A')}")
+                st.write(f"**Class:** {flight.get('cabin_class', 'N/A')}")
 
-            if st.button(f"预订", key=f"book_flight_{msg_idx}_{idx}"):
+            if st.button(f"Book", key=f"book_flight_{msg_idx}_{idx}"):
                 add_to_orders("flight", flight)
 
 
 def display_weather(weather: dict):
-    """显示天气信息"""
+    """Display weather information"""
     if display_weather_enhanced:
         formatted_weather = {
             "location": weather.get("location", weather.get("city", "")),
@@ -560,163 +587,185 @@ def display_weather(weather: dict):
 
 
 def _display_weather_fallback(weather: dict):
-    """天气备用展示"""
+    """Weather fallback display"""
     with st.container():
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("温度", f"{weather.get('temperature', 'N/A')}°C")
+            st.metric("Temperature", f"{weather.get('temperature', 'N/A')}°C")
         with col2:
-            st.metric("湿度", f"{weather.get('humidity', 'N/A')}%")
+            st.metric("Humidity", f"{weather.get('humidity', 'N/A')}%")
         with col3:
-            st.metric("风速", weather.get('wind_speed', 'N/A'))
+            st.metric("Wind Speed", weather.get('wind_speed', 'N/A'))
         with col4:
-            st.metric("天气", weather.get('weather', 'N/A'))
+            st.metric("Weather", weather.get('weather', 'N/A'))
 
 
-# ==================== 建议按钮 ====================
+# ==================== Suggestion Buttons ====================
 def display_suggestions(suggestions: list, msg_idx: int = 0):
-    """显示建议按钮"""
+    """Display suggestion buttons"""
     if not suggestions:
         return
 
-    st.markdown("**您可能还想了解：**")
+    st.markdown("**You might also want to know:**")
     cols = st.columns(min(len(suggestions[:3]), 3))
     for idx, (col, suggestion) in enumerate(zip(cols, suggestions[:3])):
         with col:
-            if st.button(f"{suggestion}", key=f"sug_{msg_idx}_{idx}_{hash(suggestion)}"):
-                handle_user_input(suggestion)
+            # ✅ 使用唯一且稳定的key
+            button_key = f"sug_{msg_idx}_{idx}_{suggestion[:20]}"
+            if st.button(f"{suggestion}", key=button_key):
+                # ✅ 使用 session_state 传递消息，避免直接调用导致卡顿
+                st.session_state.pending_message = suggestion
 
 
 def add_to_orders(order_type: str, item: dict):
-    """添加到订单"""
+    """Add to orders"""
     order = {
         "type": order_type,
         "item": item,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     st.session_state.orders.append(order)
-    st.success(f"已添加到订单！共 {len(st.session_state.orders)} 个订单")
+    st.success(f"Added to orders! Total {len(st.session_state.orders)} orders")
     st.balloons()
 
 
-# ==================== 主函数 - 优化版 ====================
+# ==================== Main Function - 优化版（减少卡顿） ====================
 def handle_user_input(message: str):
-    """处理用户输入 - 优化版，减少卡顿"""
+    """Handle user input - 优化版本，减少不必要的 rerun"""
     if not message.strip():
         return
 
-    # 立即添加用户消息并更新UI（不rerun）
-    save_message_to_conversation("user", message)
+    # ✅ 检查是否正在处理，避免重复处理
+    if st.session_state.processing:
+        return
 
-    # 使用 st.empty() 创建占位符来动态更新内容
-    # 这样可以避免全页面重载
-    with st.spinner("🤔 AI正在思考，请稍候..."):
+    # ✅ 标记为处理中
+    st.session_state.processing = True
+
+    try:
+        # 添加用户消息
+        save_message_to_conversation("user", message)
+
+        # 创建占位符用于显示处理状态
+        status_placeholder = st.empty()
+        status_placeholder.info("🤔 AI is thinking, please wait...")
+
+        # 调用后端API
         response = call_backend_api(message)
 
-    # 添加AI响应
-    save_message_to_conversation("assistant", response.get("content", ""),
-                                 action=response.get("action"),
-                                 data=response.get("data"),
-                                 suggestions=response.get("suggestions", []))
+        # 清除状态提示
+        status_placeholder.empty()
 
-    # 只在添加消息后rerun一次
-    st.rerun()
+        # 添加AI响应
+        save_message_to_conversation(
+            "assistant",
+            response.get("content", ""),
+            action=response.get("action"),
+            data=response.get("data"),
+            suggestions=response.get("suggestions", [])
+        )
+
+    finally:
+        # ✅ 重置处理状态
+        st.session_state.processing = False
+        # ✅ 只在最后 rerun 一次
+        st.rerun()
 
 
-# ==================== 侧边栏 ====================
+# ==================== Sidebar ====================
 with st.sidebar:
-    st.header("💬 对话管理")
+    st.header("💬 Conversation Management")
 
-    # 新建对话按钮
+    # New conversation button
     col1, col2 = st.columns([3, 1])
     with col1:
-        if st.button("➕ 新建对话", use_container_width=True, type="primary"):
+        if st.button("➕ New Conversation", use_container_width=True, type="primary", key="new_conv_btn"):
             create_new_conversation()
             st.rerun()
 
     with col2:
-        # 刷新按钮
-        if st.button("🔄", use_container_width=True, help="刷新对话列表"):
+        # Refresh button
+        if st.button("🔄", use_container_width=True, help="Refresh conversation list", key="refresh_btn"):
             st.rerun()
 
     st.divider()
 
-    # 对话列表
-    st.markdown("#### 📋 对话列表")
+    # Conversation list
+    st.markdown("#### 📋 Conversation List")
 
-    # 按更新时间排序对话
+    # Sort conversations by update time
     sorted_convs = sorted(
         st.session_state.conversations.items(),
         key=lambda x: x[1]["updated_at"],
         reverse=True
     )
 
-    # 显示对话列表
+    # Display conversation list
     for conv_id, conv in sorted_convs:
         is_active = conv_id == st.session_state.current_conversation_id
         msg_count = len(conv["messages"])
 
-        # 使用expander来显示每个对话
+        # Use expander to display each conversation
         with st.expander(
-            f"{'🟢' if is_active else '⚪'} {conv['name']} ({msg_count}条)",
+            f"{'🟢' if is_active else '⚪'} {conv['name']} ({msg_count} msgs)",
             expanded=is_active
         ):
-            st.caption(f"创建于: {conv['created_at']}")
-            st.caption(f"更新于: {conv['updated_at']}")
+            st.caption(f"Created: {conv['created_at']}")
+            st.caption(f"Updated: {conv['updated_at']}")
 
             col_a, col_b, col_c = st.columns(3)
 
             with col_a:
                 if not is_active:
-                    if st.button("切换", key=f"switch_{conv_id}", use_container_width=True):
+                    if st.button("Switch", key=f"switch_{conv_id}", use_container_width=True):
                         switch_conversation(conv_id)
                         st.rerun()
 
             with col_b:
-                if st.button("重命名", key=f"rename_{conv_id}", use_container_width=True):
+                if st.button("Rename", key=f"rename_{conv_id}", use_container_width=True):
                     st.session_state[f"renaming_{conv_id}"] = True
                     st.rerun()
 
             with col_c:
                 if len(st.session_state.conversations) > 1:
-                    if st.button("删除", key=f"delete_{conv_id}", use_container_width=True):
+                    if st.button("Delete", key=f"delete_{conv_id}", use_container_width=True):
                         if delete_conversation(conv_id):
-                            st.success("✅ 已删除")
+                            st.success("✅ Deleted")
                             st.rerun()
 
-            # 重命名输入框
+            # Rename input box
             if st.session_state.get(f"renaming_{conv_id}", False):
                 new_name = st.text_input(
-                    "新名称",
+                    "New Name",
                     value=conv['name'],
                     key=f"new_name_{conv_id}"
                 )
                 col_x, col_y = st.columns(2)
                 with col_x:
-                    if st.button("确认", key=f"confirm_{conv_id}", use_container_width=True):
+                    if st.button("Confirm", key=f"confirm_{conv_id}", use_container_width=True):
                         if new_name.strip():
                             rename_conversation(conv_id, new_name.strip())
                             st.session_state[f"renaming_{conv_id}"] = False
                             st.rerun()
                 with col_y:
-                    if st.button("取消", key=f"cancel_{conv_id}", use_container_width=True):
+                    if st.button("Cancel", key=f"cancel_{conv_id}", use_container_width=True):
                         st.session_state[f"renaming_{conv_id}"] = False
                         st.rerun()
 
     st.divider()
 
-    # 当前对话设置
-    st.markdown("#### ⚙️ 当前对话设置")
+    # Current conversation settings
+    st.markdown("#### ⚙️ Current Settings")
 
     current_conv = get_current_conversation()
     if current_conv:
         preferences = current_conv["preferences"]
 
         destination = st.text_input(
-            "目的地",
+            "Destination",
             value=preferences.get("destination", ""),
-            placeholder="例如：成都、杭州、东京",
-            help="输入您想去的城市或地区",
+            placeholder="e.g.: Chengdu, Hangzhou, Tokyo",
+            help="Enter the city or region you want to visit",
             key="sidebar_destination"
         )
         preferences["destination"] = destination
@@ -724,24 +773,24 @@ with st.sidebar:
         col1, col2 = st.columns(2)
         with col1:
             days = st.number_input(
-                "天数",
+                "Days",
                 min_value=1,
                 max_value=30,
                 value=max(1, preferences.get("days", 3)),
                 step=1,
-                help="旅行天数（1-30天）",
+                help="Trip duration (1-30 days)",
                 key="sidebar_days"
             )
             preferences["days"] = days
 
         with col2:
             budget = st.number_input(
-                "预算 (¥)",
+                "Budget (¥)",
                 min_value=500,
                 max_value=100000,
                 value=max(500, int(preferences.get("budget", 5000))),
                 step=500,
-                help="总预算金额",
+                help="Total budget amount",
                 key="sidebar_budget"
             )
             preferences["budget"] = budget
@@ -749,10 +798,10 @@ with st.sidebar:
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input(
-                "开始日期",
+                "Start Date",
                 value=preferences.get("start_date", datetime.now().date()),
                 min_value=datetime.now().date(),
-                help="旅行开始日期",
+                help="Trip start date",
                 key="sidebar_start_date"
             )
             preferences["start_date"] = start_date
@@ -760,40 +809,40 @@ with st.sidebar:
         with col2:
             default_end = start_date + timedelta(days=days-1)
             end_date = st.date_input(
-                "结束日期",
+                "End Date",
                 value=default_end,
                 min_value=start_date,
-                help="旅行结束日期",
+                help="Trip end date",
                 key="sidebar_end_date"
             )
             preferences["end_date"] = end_date
 
-        # 保存到current_trip以保持兼容性
+        # Save to current_trip for compatibility
         st.session_state.current_trip = preferences
 
     st.divider()
 
-    st.subheader("快速操作")
+    st.subheader("Quick Actions")
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("清空当前对话", use_container_width=True):
+        if st.button("Clear Current", use_container_width=True, key="clear_btn"):
             current_conv = get_current_conversation()
             if current_conv:
                 current_conv["messages"] = []
                 st.session_state.messages = []
-                st.success("对话已清空")
+                st.success("Conversation cleared")
                 st.rerun()
 
     with col2:
-        if st.button("查看订单", use_container_width=True):
+        if st.button("View Orders", use_container_width=True, key="view_orders_btn"):
             if st.session_state.orders:
-                st.info(f"共 {len(st.session_state.orders)} 个订单")
+                st.info(f"Total {len(st.session_state.orders)} orders")
             else:
-                st.info("暂无订单")
+                st.info("No orders yet")
 
     if st.session_state.orders:
-        with st.expander(f"订单详情 ({len(st.session_state.orders)})", expanded=False):
+        with st.expander(f"Order Details ({len(st.session_state.orders)})", expanded=False):
             for idx, order in enumerate(st.session_state.orders, 1):
                 item = order['item']
                 order_type = order['type']
@@ -801,8 +850,8 @@ with st.sidebar:
                 price = item.get('price', 0) if order_type == 'hotel' else item.get('total_price', 0)
 
                 st.write(f"**{idx}. {name}**")
-                st.caption(f"类型: {order_type} | 价格: ¥{price}")
-                if st.button("删除", key=f"del_order_{idx}"):
+                st.caption(f"Type: {order_type} | Price: ¥{price}")
+                if st.button("Delete", key=f"del_order_{idx}"):
                     st.session_state.orders.pop(idx-1)
                     st.rerun()
                 if idx < len(st.session_state.orders):
@@ -810,46 +859,46 @@ with st.sidebar:
 
     st.divider()
 
-    # 状态信息
+    # Status info
     current_conv = get_current_conversation()
     if current_conv:
         st.caption(f"""
-        **当前对话状态**
-        - 对话名: {current_conv['name']}
-        - 消息数: {len(current_conv['messages'])}
-        - 目的地: {current_conv['preferences'].get('destination') or '未设置'}
-        - 预算: ¥{current_conv['preferences'].get('budget', 0):,}
-        - 天数: {current_conv['preferences'].get('days', 0)}天
+        **Current Status**
+        - Conversation: {current_conv['name']}
+        - Messages: {len(current_conv['messages'])}
+        - Destination: {current_conv['preferences'].get('destination') or 'Not set'}
+        - Budget: ¥{current_conv['preferences'].get('budget', 0):,}
+        - Days: {current_conv['preferences'].get('days', 0)}
         """)
 
     st.divider()
 
-    # 后端状态
+    # Backend status
     try:
         response = requests.get("http://localhost:5000/health", timeout=1)
         if response.status_code == 200:
-            st.success("✅ 后端已连接")
+            st.success("✅ Backend Connected")
         else:
-            st.error("❌ 后端异常")
+            st.error("❌ Backend Error")
     except:
-        st.error("❌ 后端未启动")
-        st.caption("运行: `python app.py`")
+        st.error("❌ Backend Not Started")
+        st.caption("Run: `python app.py`")
 
 
-# ==================== 主界面 ====================
-st.title("💬 TripPilot 智能旅行助手")
-st.caption("基于 DeepSeek AI | 让旅行规划变得简单有趣")
+# ==================== Main Interface ====================
+st.title("💬 TripPilot Intelligent Travel Assistant")
+st.caption("Based on DeepSeek AI | Make Travel Planning Simple and Fun")
 
-# 显示当前对话名称
+# Display current conversation name
 current_conv = get_current_conversation()
 if current_conv:
-    st.info(f"📝 当前对话: **{current_conv['name']}** | {len(current_conv['messages'])}条消息")
+    st.info(f"📝 Current: **{current_conv['name']}** | {len(current_conv['messages'])} messages")
 
 if not st.session_state.messages:
     st.markdown("""
     <div class="info-card">
-    <h3>您好！我是您的专属AI旅行助手</h3>
-    <p>我可以为您提供个性化的旅行服务，包括行程规划、酒店推荐、航班查询等。</p>
+    <h3>Hello! I'm your dedicated AI travel assistant</h3>
+    <p>I can provide you with personalized travel services, including itinerary planning, hotel recommendations, flight inquiries, and more.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -857,51 +906,52 @@ if not st.session_state.messages:
 
     with col1:
         st.markdown("""
-        **行程规划**
-        - 详细的每日安排
-        - 景点路线优化
-        - 时间分配建议
+        **Itinerary Planning**
+        - Detailed daily arrangements
+        - Attraction route optimization
+        - Time allocation suggestions
         """)
 
     with col2:
         st.markdown("""
-        **住宿推荐**
-        - 各档次酒店选择
-        - 位置优势分析
-        - 性价比排序
+        **Accommodation Recommendations**
+        - Various hotel grade options
+        - Location advantage analysis
+        - Value-for-money ranking
         """)
 
     with col3:
         st.markdown("""
-        **交通安排**
-        - 航班时刻查询
-        - 最优路线推荐
-        - 交通工具建议
+        **Transportation Arrangement**
+        - Flight schedule inquiry
+        - Optimal route recommendations
+        - Transportation tool suggestions
         """)
 
     st.divider()
 
-    st.subheader("快速开始 - 点击试试")
+    st.subheader("Quick Start - Click to Try")
 
     example_queries = [
-        "帮我规划一个成都3日游，预算5000元",
-        "推荐杭州西湖附近的酒店",
-        "查询北京到上海的航班",
-        "东京有什么必去的景点？",
-        "三亚的天气怎么样，需要带什么衣服？"
+        "Help me plan a 3-day trip to Chengdu with a budget of 5000 yuan",
+        "Recommend hotels near West Lake in Hangzhou",
+        "Query flights from Beijing to Shanghai",
+        "What are the must-see attractions in Tokyo?",
+        "What's the weather like in Sanya, what clothes should I bring?"
     ]
 
     cols = st.columns(2)
     for idx, query in enumerate(example_queries):
         with cols[idx % 2]:
-            if st.button(f"{query}", key=f"example_{idx}", use_container_width=True):
-                handle_user_input(query)
+            # ✅ 使用稳定的key
+            if st.button(f"{query}", key=f"example_query_{idx}", use_container_width=True):
+                st.session_state.pending_message = query
 
     st.divider()
 
-    st.info("**提示**：您可以直接在下方输入框告诉我您的旅行需求，比如目的地、预算、天数等，我会为您制定专属方案！")
+    st.info("**Tip**: You can directly tell me your travel needs in the input box below, such as destination, budget, days, etc. I will create an exclusive plan for you!")
 
-# 显示消息历史
+# Display message history
 message_container = st.container()
 with message_container:
     for msg_idx, message in enumerate(st.session_state.messages):
@@ -910,27 +960,33 @@ with message_container:
         else:
             display_ai_message(message, msg_idx)
 
-# 输入框
+# ✅ 处理待发送的消息（来自建议按钮或示例查询）
+if "pending_message" in st.session_state and st.session_state.pending_message:
+    pending_msg = st.session_state.pending_message
+    st.session_state.pending_message = None  # 清除待发送消息
+    handle_user_input(pending_msg)
+
+# Input box
 user_input = st.chat_input(
-    "告诉我您的旅行需求...",
+    "Tell me your travel needs...",
     key="chat_input"
 )
 
 if user_input:
     handle_user_input(user_input)
 
-# 页脚
+# Footer
 with st.container():
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.caption("TripPilot v2.0 - 您的智能旅行伙伴")
+        st.caption("TripPilot v2.0 - Your Intelligent Travel Partner")
 
     with col2:
         if st.session_state.messages:
             last_msg_time = datetime.now().strftime("%H:%M")
-            st.caption(f"最后更新: {last_msg_time}")
+            st.caption(f"Last updated: {last_msg_time}")
 
     with col3:
-        st.caption("💡 提示：可以在侧边栏管理多个对话")
+        st.caption("💡 Tip: Manage multiple conversations in the sidebar")

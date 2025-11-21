@@ -1,5 +1,6 @@
 """
-修复版天气组件 - 简化emoji，修复HTML渲染问题
+天气组件 - 修复版
+支持DeepSeek返回的天气数据结构，包含4天预报
 """
 
 import streamlit as st
@@ -14,28 +15,35 @@ def get_weather_emoji(condition):
         "cloudy": "☁", "多云": "☁", "阴": "☁",
         "partly_cloudy": "⛅", "晴转多云": "⛅",
         "rainy": "🌧", "小雨": "🌧", "中雨": "🌧", "大雨": "⛈",
-        "stormy": "⛈", "雷雨": "⛈",
+        "stormy": "⛈", "雷雨": "⛈", "雷阵雨": "⛈",
         "snowy": "🌨", "雪": "❄", "小雪": "🌨",
         "foggy": "🌫", "雾": "🌫",
         "windy": "💨", "大风": "💨"
     }
 
+    condition_str = str(condition).lower()
     for key, emoji in weather_emojis.items():
-        if key in str(condition).lower():
+        if key in condition_str:
             return emoji
     return "🌤"
 
 
-def display_weather_enhanced(weather_data, city_name="城市"):
+def display_weather_enhanced(weather_data, city_name=None):
     """
-    显示增强版天气信息 - 修复版
+    显示增强版天气信息 - 支持DeepSeek返回的数据
 
     参数:
-        weather_data: 天气数据字典
-        city_name: 城市名称
+        weather_data: 天气数据字典，必须包含：
+            - temperature: 温度
+            - feels_like: 体感温度
+            - weather/description: 天气描述
+            - humidity: 湿度
+            - wind_speed: 风速
+            - forecast: 4天预报数组（可选）
+        city_name: 城市名称（可选，如果weather_data中有city/location则使用那个）
     """
 
-    # 修复后的CSS样式 - 使用浅绿色
+    # CSS样式 - 使用浅绿色
     st.markdown("""
     <style>
     .weather-card-fixed {
@@ -74,46 +82,13 @@ def display_weather_enhanced(weather_data, city_name="城市"):
         font-size: 20px;
         opacity: 0.95;
     }
-    
-    .weather-details-container {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 16px;
-        margin-top: 20px;
-        padding-top: 20px;
-        border-top: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    
-    .weather-detail-box {
-        background: rgba(255, 255, 255, 0.15);
-        padding: 12px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    
-    .weather-detail-title {
-        font-size: 13px;
-        opacity: 0.8;
-        margin-bottom: 4px;
-    }
-    
-    .weather-detail-content {
-        font-size: 20px;
-        font-weight: 700;
-    }
-    
-    .weather-advice-box {
-        background: rgba(255, 255, 255, 0.2);
-        padding: 14px 18px;
-        border-radius: 10px;
-        margin-top: 16px;
-        font-size: 14px;
-        line-height: 1.6;
-    }
     </style>
     """, unsafe_allow_html=True)
 
     # 提取数据
+    if not city_name:
+        city_name = weather_data.get('city', weather_data.get('location', '城市'))
+
     temp = weather_data.get('temperature', 20)
     feels_like = weather_data.get('feels_like', temp)
     desc = weather_data.get('weather', weather_data.get('description', '晴朗'))
@@ -126,7 +101,7 @@ def display_weather_enhanced(weather_data, city_name="城市"):
 
     icon = get_weather_emoji(desc)
 
-    # 生成天气建议（简化版）
+    # 生成天气建议
     if temp > 30:
         advice = "天气炎热，请注意防暑降温，多喝水，避免长时间户外活动"
     elif temp > 25:
@@ -145,10 +120,10 @@ def display_weather_enhanced(weather_data, city_name="城市"):
         advice += "。记得带伞"
     elif '雪' in desc:
         advice += "。路面可能湿滑，注意安全"
-    elif '风' in desc or float(wind_speed.split()[0]) > 5:
+    elif '风' in desc or (wind_speed and float(wind_speed.split()[0]) > 5):
         advice += "。风力较大，注意防风"
 
-    # 使用Streamlit原生组件渲染，避免HTML问题
+    # 主卡片
     st.markdown(f"""
     <div class='weather-card-fixed'>
         <div class='weather-city-name'>{city_name}</div>
@@ -160,7 +135,7 @@ def display_weather_enhanced(weather_data, city_name="城市"):
     </div>
     """, unsafe_allow_html=True)
 
-    # 使用Streamlit原生组件显示详细信息
+    # 详细信息 - 使用Streamlit原生组件
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -173,39 +148,84 @@ def display_weather_enhanced(weather_data, city_name="城市"):
         st.metric("风速", wind_speed)
 
     with col4:
-        st.metric("空气质量", "良好")
+        # 根据天气或数据判断空气质量
+        air_quality = weather_data.get('air_quality', '良好')
+        st.metric("空气质量", air_quality)
 
     # 出行建议
     st.info(f"**出行建议：** {advice}")
 
-    # 未来天气预报 - 使用简化版本
-    st.markdown("### 未来4天预报")
+    # ✅ 未来天气预报 - 使用DeepSeek返回的forecast数据
+    forecast_data = weather_data.get('forecast', [])
 
-    forecast_data = get_mock_forecast_data(4)
+    if forecast_data and len(forecast_data) > 0:
+        st.markdown("### 未来天气预报")
 
-    cols = st.columns(4)
-    for idx, (col, day) in enumerate(zip(cols, forecast_data)):
-        with col:
-            day_icon = get_weather_emoji(day['description'])
-            st.markdown(f"""
-            <div style='text-align: center; padding: 12px; background: #f3f4f6; 
-                        border-radius: 10px; border: 1px solid #e5e7eb;'>
-                <div style='font-size: 12px; color: #6b7280; margin-bottom: 6px;'>
-                    {day['date']}
+        # 显示forecast数据
+        cols = st.columns(min(len(forecast_data), 4))
+
+        for idx, (col, day) in enumerate(zip(cols, forecast_data[:4])):
+            with col:
+                day_icon = get_weather_emoji(day.get('description', day.get('weather', '晴')))
+
+                st.markdown(f"""
+                <div style='text-align: center; padding: 12px; background: #f3f4f6; 
+                            border-radius: 10px; border: 1px solid #e5e7eb;'>
+                    <div style='font-size: 12px; color: #6b7280; margin-bottom: 6px;'>
+                        {day.get('date', f'Day {idx+1}')}
+                    </div>
+                    <div style='font-size: 36px; margin: 8px 0;'>{day_icon}</div>
+                    <div style='font-size: 15px; font-weight: 600; color: #10b981;'>
+                        {day.get('temp_high', 'N/A')}° / {day.get('temp_low', 'N/A')}°
+                    </div>
+                    <div style='font-size: 11px; color: #9ca3af; margin-top: 4px;'>
+                        {day.get('description', day.get('weather', 'N/A'))}
+                    </div>
                 </div>
-                <div style='font-size: 36px; margin: 8px 0;'>{day_icon}</div>
-                <div style='font-size: 15px; font-weight: 600; color: #10b981;'>
-                    {day['temp_high']}° / {day['temp_low']}°
+                """, unsafe_allow_html=True)
+    else:
+        # 如果没有forecast数据，生成mock数据作为fallback
+        st.markdown("### 未来4天预报")
+        st.caption("⚠️ 预报数据暂时不可用，显示示例数据")
+
+        forecast_data = get_mock_forecast_data(4)
+        cols = st.columns(4)
+
+        for idx, (col, day) in enumerate(zip(cols, forecast_data)):
+            with col:
+                day_icon = get_weather_emoji(day['description'])
+                st.markdown(f"""
+                <div style='text-align: center; padding: 12px; background: #f3f4f6; 
+                            border-radius: 10px; border: 1px solid #e5e7eb;'>
+                    <div style='font-size: 12px; color: #6b7280; margin-bottom: 6px;'>
+                        {day['date']}
+                    </div>
+                    <div style='font-size: 36px; margin: 8px 0;'>{day_icon}</div>
+                    <div style='font-size: 15px; font-weight: 600; color: #10b981;'>
+                        {day['temp_high']}° / {day['temp_low']}°
+                    </div>
+                    <div style='font-size: 11px; color: #9ca3af; margin-top: 4px;'>
+                        {day['description']}
+                    </div>
                 </div>
-                <div style='font-size: 11px; color: #9ca3af; margin-top: 4px;'>
-                    {day['description']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+
+    # 额外信息（如果有）
+    if weather_data.get('sunrise') or weather_data.get('sunset'):
+        st.divider()
+        col_sun1, col_sun2 = st.columns(2)
+
+        with col_sun1:
+            if weather_data.get('sunrise'):
+                st.markdown(f"🌅 **日出：** {weather_data.get('sunrise')}")
+
+        with col_sun2:
+            if weather_data.get('sunset'):
+                st.markdown(f"🌇 **日落：** {weather_data.get('sunset')}")
 
 
 def get_mock_forecast_data(days=4):
-    """获取模拟预报数据"""
+    """获取模拟预报数据（仅在没有真实数据时使用）"""
     forecast = []
     weather_options = ["晴", "多云", "阴", "小雨", "晴转多云"]
 
@@ -219,6 +239,7 @@ def get_mock_forecast_data(days=4):
             "temp_high": random.randint(20, 30),
             "temp_low": random.randint(15, 22),
             "description": random.choice(weather_options),
+            "weather": random.choice(weather_options)
         })
 
     return forecast
@@ -226,16 +247,74 @@ def get_mock_forecast_data(days=4):
 
 # 测试代码
 if __name__ == "__main__":
-    st.set_page_config(page_title="修复版天气组件", layout="wide")
+    st.set_page_config(page_title="天气组件测试", layout="wide")
 
-    st.title("修复版天气组件测试")
+    st.title("天气组件测试 - 支持DeepSeek数据")
 
-    test_weather = {
-        'temperature': 22,
-        'feels_like': 20,
-        'weather': '晴朗',
-        'humidity': 65,
-        'wind_speed': '3.5 m/s'
+    # 测试数据1: 完整的DeepSeek数据格式
+    test_weather_deepseek = {
+        'city': '成都',
+        'location': '成都',
+        'temperature': 18,
+        'feels_like': 16,
+        'weather': '多云',
+        'description': '多云',
+        'humidity': 70,
+        'wind_speed': '2.5 m/s',
+        'wind_direction': '东南风',
+        'visibility': '12 km',
+        'pressure': '1015 hPa',
+        'uv_index': 3,
+        'sunrise': '07:15',
+        'sunset': '18:30',
+        'update_time': '2025-11-21 14:30',
+        'air_quality': '良',
+        'forecast': [
+            {
+                'date': '11/22 周五',
+                'temp_high': 20,
+                'temp_low': 14,
+                'weather': '晴',
+                'description': '晴'
+            },
+            {
+                'date': '11/23 周六',
+                'temp_high': 22,
+                'temp_low': 15,
+                'weather': '多云',
+                'description': '多云'
+            },
+            {
+                'date': '11/24 周日',
+                'temp_high': 19,
+                'temp_low': 13,
+                'weather': '小雨',
+                'description': '小雨'
+            },
+            {
+                'date': '11/25 周一',
+                'temp_high': 21,
+                'temp_low': 14,
+                'weather': '晴转多云',
+                'description': '晴转多云'
+            }
+        ]
     }
 
-    display_weather_enhanced(test_weather, "北京")
+    st.subheader("测试1: 完整的DeepSeek数据（包含4天预报）")
+    display_weather_enhanced(test_weather_deepseek)
+
+    st.divider()
+
+    # 测试数据2: 没有forecast的数据
+    test_weather_no_forecast = {
+        'city': '北京',
+        'temperature': 8,
+        'feels_like': 5,
+        'weather': '晴',
+        'humidity': 45,
+        'wind_speed': '4.0 m/s'
+    }
+
+    st.subheader("测试2: 没有预报数据（使用fallback）")
+    display_weather_enhanced(test_weather_no_forecast)
