@@ -1,10 +1,10 @@
 """
-天气组件 - 改进版
-新功能：
-1. 🌤️ 主天气大显示（查询当天）
-2. 📅 未来天气小卡片显示
-3. 更丰富的天气图标
-4. 支持DeepSeek返回的天气数据结构
+Weather Widget - Improved Version
+New Features:
+1. 🌤️ Main Weather Large Display (Current Day)
+2. 📅 Future Weather Small Card Display
+3. Richer Weather Icons
+4. Supports DeepSeek Returned Weather Data Structure
 """
 
 import streamlit as st
@@ -13,7 +13,7 @@ import random
 
 
 def get_weather_emoji(condition):
-    """根据天气状况返回对应的emoji"""
+    """Return corresponding emoji based on weather condition"""
     weather_emojis = {
         "clear": "☀️", "sunny": "☀️", "晴": "☀️", "晴朗": "☀️",
         "cloudy": "☁️", "多云": "☁️", "阴": "☁️",
@@ -34,23 +34,23 @@ def get_weather_emoji(condition):
 
 def display_weather_enhanced(weather_data, city_name=None):
     """
-    显示增强版天气信息 - 主天气大显示，未来天气小显示
+    Display Enhanced Weather Info - Main Weather Large Display, Future Weather Small Display
 
-    参数:
-        weather_data: 天气数据字典，必须包含：
-            - temperature: 温度
-            - feels_like: 体感温度
-            - weather/description: 天气描述
-            - humidity: 湿度
-            - wind_speed: 风速
-            - forecast: 未来天气预报数组（可选）
-        city_name: 城市名称（可选）
+    Parameters:
+        weather_data: Weather data dictionary, must contain:
+            - temperature: Temperature
+            - feels_like: Feels Like Temperature
+            - weather/description: Weather Description
+            - humidity: Humidity
+            - wind_speed: Wind Speed
+            - forecast: Future Weather Forecast Array (Optional)
+        city_name: City Name (Optional)
     """
 
-    # CSS样式 - 使用浅绿色
+    # CSS Styles - Using Light Green
     st.markdown("""
     <style>
-    /* 主天气卡片 - 大卡片 */
+    /* Main Weather Card - Large Card */
     .weather-card-main {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         padding: 30px;
@@ -92,7 +92,7 @@ def display_weather_enhanced(weather_data, city_name=None):
         font-weight: 500;
     }
     
-    /* 未来天气小卡片 */
+    /* Future Weather Small Card */
     .forecast-small-card {
         background: white;
         border: 1px solid #e5e7eb;
@@ -136,48 +136,49 @@ def display_weather_enhanced(weather_data, city_name=None):
     """, unsafe_allow_html=True)
 
 
-    # 提取数据
+    # Extract Data
     if not city_name:
-        city_name = weather_data.get('city', weather_data.get('location', '城市'))
+        city_name = weather_data.get('city', weather_data.get('location', 'City'))
 
     temp = weather_data.get('temperature', 20)
     feels_like = weather_data.get('feels_like', temp)
-    desc = weather_data.get('weather', weather_data.get('description', '晴朗'))
+    desc = weather_data.get('weather', weather_data.get('description', 'Clear'))
     humidity = weather_data.get('humidity', 60)
     wind_speed = weather_data.get('wind_speed', '3.0 m/s')
 
-    # 确保wind_speed是字符串
+    # Ensure wind_speed is a string
     if not isinstance(wind_speed, str):
         wind_speed = f"{wind_speed} m/s"
 
     icon = get_weather_emoji(desc)
 
-    # 生成天气建议
+    # Generate Weather Advice
     if temp > 30:
-        advice = "☀️ 天气炎热，请注意防暑降温，多喝水，避免长时间户外活动"
+        advice = "☀️ Hot weather, stay cool, drink plenty of water, and avoid prolonged outdoor activities."
     elif temp > 25:
-        advice = "🌤️ 天气温暖舒适，适合外出游玩，建议做好防晒"
+        advice = "🌤️ Warm and comfortable, suitable for outings, sunscreen recommended."
     elif temp > 15:
-        advice = "😊 温度适宜，非常适合户外活动和旅行"
+        advice = "😊 Pleasant temperature, perfect for outdoor activities and travel."
     elif temp > 10:
-        advice = "🧥 天气稍凉，建议携带外套以备不时之需"
+        advice = "🧥 Slightly cool, bringing a jacket is recommended."
     elif temp > 0:
-        advice = "🥶 天气较冷，请注意保暖，建议穿着厚外套"
+        advice = "🥶 Chilly, please dress warmly and wear a thick coat."
     else:
-        advice = "❄️ 天气寒冷，请做好防寒措施，注意保暖"
+        advice = "❄️ Very cold, take precautions against the cold and stay warm."
 
-    # 根据天气添加额外建议
-    if '雨' in desc:
-        advice += " | 记得带伞 ☔"
-    elif '雪' in desc:
-        advice += " | 路面可能湿滑，注意安全 ⚠️"
-    elif '风' in desc or (wind_speed and float(wind_speed.split()[0]) > 5):
-        advice += " | 风力较大，注意防风 💨"
+    # Add extra advice based on weather
+    desc_lower = str(desc).lower()
+    if 'rain' in desc_lower or '雨' in str(desc):
+        advice += " | Remember to bring an umbrella ☔"
+    elif 'snow' in desc_lower or '雪' in str(desc):
+        advice += " | Roads may be slippery, be careful ⚠️"
+    elif 'wind' in desc_lower or '风' in str(desc) or (wind_speed and float(wind_speed.split()[0]) > 5):
+        advice += " | Windy conditions, be mindful of the wind 💨"
 
-    # ===== 主天气卡片 - 大显示 =====
+    # ===== Main Weather Card - Large Display =====
     st.markdown(f"""
     <div class='weather-card-main'>
-        <div class='weather-city-name'>📍 {city_name} · 实时天气</div>
+        <div class='weather-city-name'>📍 {city_name} · Current Weather</div>
         <div class='weather-main-display'>
             <div class='weather-icon-large'>{icon}</div>
             <div class='weather-temp-large'>{temp}°C</div>
@@ -186,40 +187,40 @@ def display_weather_enhanced(weather_data, city_name=None):
     </div>
     """, unsafe_allow_html=True)
 
-    # ===== 详细信息 - 使用Streamlit原生组件 =====
+    # ===== Detailed Info - Using Streamlit Native Components =====
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("🌡️ 体感温度", f"{feels_like}°C")
+        st.metric("🌡️ Feels Like", f"{feels_like}°C")
 
     with col2:
-        st.metric("💧 湿度", f"{humidity}%")
+        st.metric("💧 Humidity", f"{humidity}%")
 
     with col3:
-        st.metric("💨 风速", wind_speed)
+        st.metric("💨 Wind Speed", wind_speed)
 
     with col4:
-        air_quality = weather_data.get('air_quality', '良好')
-        st.metric("🍃 空气质量", air_quality)
+        air_quality = weather_data.get('air_quality', 'Good')
+        st.metric("🍃 Air Quality", air_quality)
 
-    # 出行建议
-    st.info(f"**💡 出行建议：** {advice}")
+    # Travel Advice
+    st.info(f"**💡 Travel Advice:** {advice}")
 
     st.divider()
 
-    # ===== 未来天气预报 - 小卡片显示 =====
+    # ===== Future Weather Forecast - Small Card Display =====
     forecast_data = weather_data.get('forecast', [])
 
     if forecast_data and len(forecast_data) > 0:
-        st.markdown("### 📅 未来天气预报")
-        st.caption("未来几天天气趋势")
+        st.markdown("### 📅 Weather Forecast")
+        st.caption("Weather trend for the next few days")
 
-        # 显示forecast数据 - 使用小卡片
+        # Display forecast data - using small cards
         cols = st.columns(min(len(forecast_data), 4))
 
         for idx, (col, day) in enumerate(zip(cols, forecast_data[:4])):
             with col:
-                day_icon = get_weather_emoji(day.get('description', day.get('weather', '晴')))
+                day_icon = get_weather_emoji(day.get('description', day.get('weather', 'Clear')))
                 day_date = day.get('date', f'Day {idx+1}')
                 temp_high = day.get('temp_high', 'N/A')
                 temp_low = day.get('temp_low', 'N/A')
@@ -234,9 +235,9 @@ def display_weather_enhanced(weather_data, city_name=None):
                 </div>
                 """, unsafe_allow_html=True)
     else:
-        # 如果没有forecast数据，生成mock数据作为fallback
-        st.markdown("### 📅 未来天气预报")
-        st.caption("⚠️ 预报数据暂时不可用，显示示例数据")
+        # If no forecast data, generate mock data as fallback
+        st.markdown("### 📅 Weather Forecast")
+        st.caption("⚠️ Forecast data temporarily unavailable, showing example data")
 
         forecast_data = get_mock_forecast_data(4)
         cols = st.columns(4)
@@ -253,28 +254,28 @@ def display_weather_enhanced(weather_data, city_name=None):
                 </div>
                 """, unsafe_allow_html=True)
 
-    # 额外信息（如果有）
+    # Extra Info (If available)
     if weather_data.get('sunrise') or weather_data.get('sunset'):
         st.divider()
         col_sun1, col_sun2 = st.columns(2)
 
         with col_sun1:
             if weather_data.get('sunrise'):
-                st.markdown(f"🌅 **日出：** {weather_data.get('sunrise')}")
+                st.markdown(f"🌅 **Sunrise:** {weather_data.get('sunrise')}")
 
         with col_sun2:
             if weather_data.get('sunset'):
-                st.markdown(f"🌇 **日落：** {weather_data.get('sunset')}")
+                st.markdown(f"🌇 **Sunset:** {weather_data.get('sunset')}")
 
 
 def get_mock_forecast_data(days=4):
-    """获取模拟预报数据（仅在没有真实数据时使用）"""
+    """Get mock forecast data (only used when real data is unavailable)"""
     forecast = []
-    weather_options = ["晴", "多云", "阴", "小雨", "晴转多云"]
+    weather_options = ["Sunny", "Cloudy", "Overcast", "Light Rain", "Partly Cloudy"]
 
     for i in range(days):
         date = datetime.now() + timedelta(days=i+1)
-        weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][date.weekday()]
+        weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][date.weekday()]
         date_str = f"{date.month}/{date.day} {weekday}"
 
         forecast.append({
@@ -288,102 +289,102 @@ def get_mock_forecast_data(days=4):
     return forecast
 
 
-# 测试代码
+# Testing Code
 if __name__ == "__main__":
-    st.set_page_config(page_title="天气组件测试", layout="wide")
+    st.set_page_config(page_title="Weather Widget Test", layout="wide")
 
-    st.title("🌤️ 天气组件测试 - 主天气大显示")
-    st.caption("当天天气大卡片，未来天气小卡片")
+    st.title("🌤️ Weather Widget Test - Main Weather Large Display")
+    st.caption("Current Day Large Card, Future Weather Small Cards")
 
-    # 测试数据1: 完整的DeepSeek数据格式
+    # Test Data 1: Complete DeepSeek Data Format
     test_weather_deepseek = {
-        'city': '成都',
-        'location': '成都',
+        'city': 'Chengdu',
+        'location': 'Chengdu',
         'temperature': 18,
         'feels_like': 16,
-        'weather': '多云',
-        'description': '多云',
+        'weather': 'Cloudy',
+        'description': 'Cloudy',
         'humidity': 70,
         'wind_speed': '2.5 m/s',
-        'wind_direction': '东南风',
+        'wind_direction': 'Southeast',
         'visibility': '12 km',
         'pressure': '1015 hPa',
         'uv_index': 3,
         'sunrise': '07:15',
         'sunset': '18:30',
         'update_time': '2025-11-21 14:30',
-        'air_quality': '良',
+        'air_quality': 'Good',
         'forecast': [
             {
-                'date': '11/22 周五',
+                'date': '11/22 Fri',
                 'temp_high': 20,
                 'temp_low': 14,
-                'weather': '晴',
-                'description': '晴'
+                'weather': 'Sunny',
+                'description': 'Sunny'
             },
             {
-                'date': '11/23 周六',
+                'date': '11/23 Sat',
                 'temp_high': 22,
                 'temp_low': 15,
-                'weather': '多云',
-                'description': '多云'
+                'weather': 'Cloudy',
+                'description': 'Cloudy'
             },
             {
-                'date': '11/24 周日',
+                'date': '11/24 Sun',
                 'temp_high': 19,
                 'temp_low': 13,
-                'weather': '小雨',
-                'description': '小雨'
+                'weather': 'Light Rain',
+                'description': 'Light Rain'
             },
             {
-                'date': '11/25 周一',
+                'date': '11/25 Mon',
                 'temp_high': 21,
                 'temp_low': 14,
-                'weather': '晴转多云',
-                'description': '晴转多云'
+                'weather': 'Partly Cloudy',
+                'description': 'Partly Cloudy'
             }
         ]
     }
 
-    st.subheader("测试1: 完整的DeepSeek数据（主天气+4天预报）")
+    st.subheader("Test 1: Complete DeepSeek Data (Main Weather + 4 Day Forecast)")
     display_weather_enhanced(test_weather_deepseek)
 
     st.divider()
 
-    # 测试数据2: 不同温度和天气
+    # Test Data 2: Different Temperature and Weather
     test_weather_hot = {
-        'city': '三亚',
+        'city': 'Sanya',
         'temperature': 32,
         'feels_like': 35,
-        'weather': '晴',
+        'weather': 'Sunny',
         'humidity': 80,
         'wind_speed': '3.5 m/s',
-        'air_quality': '优',
+        'air_quality': 'Excellent',
         'forecast': [
-            {'date': '明天', 'temp_high': 33, 'temp_low': 26, 'description': '晴'},
-            {'date': '后天', 'temp_high': 34, 'temp_low': 27, 'description': '晴'},
+            {'date': 'Tomorrow', 'temp_high': 33, 'temp_low': 26, 'description': 'Sunny'},
+            {'date': 'Day After', 'temp_high': 34, 'temp_low': 27, 'description': 'Sunny'},
         ]
     }
 
-    st.subheader("测试2: 炎热天气")
+    st.subheader("Test 2: Hot Weather")
     display_weather_enhanced(test_weather_hot)
 
     st.divider()
 
-    # 测试数据3: 寒冷天气
+    # Test Data 3: Cold Weather
     test_weather_cold = {
-        'city': '哈尔滨',
+        'city': 'Harbin',
         'temperature': -5,
         'feels_like': -8,
-        'weather': '小雪',
+        'weather': 'Light Snow',
         'humidity': 65,
         'wind_speed': '5.0 m/s',
-        'air_quality': '良',
+        'air_quality': 'Good',
         'forecast': [
-            {'date': '明天', 'temp_high': -3, 'temp_low': -10, 'description': '多云'},
-            {'date': '后天', 'temp_high': -2, 'temp_low': -9, 'description': '晴'},
+            {'date': 'Tomorrow', 'temp_high': -3, 'temp_low': -10, 'description': 'Cloudy'},
+            {'date': 'Day After', 'temp_high': -2, 'temp_low': -9, 'description': 'Sunny'},
         ]
     }
 
-    st.subheader("测试3: 寒冷天气")
+    st.subheader("Test 3: Cold Weather")
     display_weather_enhanced(test_weather_cold)

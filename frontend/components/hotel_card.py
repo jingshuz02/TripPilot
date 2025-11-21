@@ -1,11 +1,11 @@
 """
-现代化酒店卡片组件 - 简洁折叠版
-功能：
-1. ⭐ 根据评分显示星星
-2. 💰 统一预算检查
-3. 📅 入住/离店日期选择（自动计算晚数）
-4. 🎯 只有第一个酒店默认展开
-5. ✅ 预订按钮在展开区域内
+Modern Hotel Card Component - Compact Collapsible Version
+Features:
+1. ⭐ Display stars based on rating
+2. 💰 Unified budget check
+3. 📅 Check-in/check-out date selection (automatically calculates nights)
+4. 🎯 Only the first hotel is expanded by default
+5. ✅ Booking button within expanded area
 """
 
 import streamlit as st
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 
 def render_star_rating(rating):
-    """根据评分渲染星星"""
+    """Render stars based on rating"""
     full_stars = int(rating)
     has_half = (rating - full_stars) >= 0.5
     empty_stars = 5 - full_stars - (1 if has_half else 0)
@@ -37,7 +37,7 @@ def render_star_rating(rating):
 
 
 def get_remaining_budget():
-    """获取剩余预算"""
+    """Get remaining budget"""
     if "current_trip" in st.session_state and "total_spent" in st.session_state:
         total_budget = st.session_state.current_trip.get("budget", 5000)
         return total_budget - st.session_state.total_spent
@@ -46,14 +46,14 @@ def get_remaining_budget():
 
 def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callback=None, is_first=False):
     """
-    现代化酒店卡片展示 - 简洁折叠版
+    Modern hotel card display - compact collapsible version
 
-    参数:
-        hotel: 酒店数据字典
-        key_prefix: 按钮key前缀
-        message_id: 消息ID
-        on_book_callback: 预订回调函数
-        is_first: 是否是第一个酒店（默认展开）
+    Parameters:
+        hotel: Hotel data dictionary
+        key_prefix: Prefix for button keys
+        message_id: Message ID
+        on_book_callback: Booking callback function
+        is_first: Whether it's the first hotel (expanded by default)
     """
 
     st.markdown("""
@@ -165,7 +165,7 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
     checkout_key = f"{key_prefix}_checkout_{message_id}_{hotel_id}"
     book_key = f"{key_prefix}_book_{message_id}_{hotel_id}"
 
-    # ✅ 初始化日期
+    # ✅ Initialize dates
     if checkin_key not in st.session_state:
         if "current_trip" in st.session_state:
             start_date = st.session_state.current_trip.get("start_date")
@@ -189,7 +189,7 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
     price_per_night = hotel.get('price', 0)
     remaining_budget = get_remaining_budget()
 
-    # === 酒店基本信息（始终显示）===
+    # === Hotel basic information (always displayed) ===
     st.markdown("<div class='modern-hotel-card'>", unsafe_allow_html=True)
 
     col_info, col_price = st.columns([3, 1])
@@ -219,38 +219,38 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
             for amenity in amenities[:3]:
                 amenities_html += f"<span class='amenity-tag-modern'>{amenity}</span>"
             if len(amenities) > 3:
-                amenities_html += f"<span class='amenity-tag-modern'>+{len(amenities)-3}项</span>"
+                amenities_html += f"<span class='amenity-tag-modern'>+{len(amenities)-3} more</span>"
             st.markdown(amenities_html, unsafe_allow_html=True)
 
     with col_price:
         st.markdown(f"""
             <div style='text-align: right;'>
                 <div class='hotel-price-modern'>¥{price_per_night:,}</div>
-                <div class='hotel-price-unit'>每晚</div>
+                <div class='hotel-price-unit'>per night</div>
             </div>
         """, unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # === 展开区域（详情 + 预订） ===
-    with st.expander("📋 查看详情并预订", expanded=is_first):
+    # === Expanded area (details + booking) ===
+    with st.expander("📋 View details and book", expanded=is_first):
 
-        # 酒店详细信息
+        # Hotel details
         st.markdown("<div style='margin-bottom: 16px;'>", unsafe_allow_html=True)
 
         col_detail1, col_detail2 = st.columns(2)
 
         with col_detail1:
-            st.write(f"**完整地址**: {hotel.get('address', 'N/A')}")
-            st.write(f"**联系电话**: {hotel.get('tel', 'N/A')}")
+            st.write(f"**Full address**: {hotel.get('address', 'N/A')}")
+            st.write(f"**Contact phone**: {hotel.get('tel', 'N/A')}")
 
         with col_detail2:
-            st.write(f"**评分**: {rating:.1f}/5.0")
-            st.write(f"**价格**: ¥{price_per_night:,}/晚")
+            st.write(f"**Rating**: {rating:.1f}/5.0")
+            st.write(f"**Price**: ¥{price_per_night:,}/night")
 
         if amenities:
             st.markdown("<div style='margin-top: 12px;'>", unsafe_allow_html=True)
-            st.write("**所有设施服务**:")
+            st.write("**All amenities and services**:")
             cols = st.columns(2)
             for i, amenity in enumerate(amenities):
                 with cols[i % 2]:
@@ -260,15 +260,15 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
         st.markdown("</div>", unsafe_allow_html=True)
         st.divider()
 
-        # === 预订区域 ===
+        # === Booking section ===
         st.markdown("<div class='booking-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>📅 选择入住日期</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>📅 Select check-in dates</div>", unsafe_allow_html=True)
 
         col_date1, col_date2 = st.columns(2)
 
         with col_date1:
             checkin_date = st.date_input(
-                "入住日期",
+                "Check-in date",
                 value=st.session_state[checkin_key],
                 min_value=datetime.now().date(),
                 key=f"{checkin_key}_widget"
@@ -277,67 +277,67 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
 
         with col_date2:
             checkout_date = st.date_input(
-                "离店日期",
+                "Check-out date",
                 value=st.session_state[checkout_key],
                 min_value=checkin_date + timedelta(days=1),
                 key=f"{checkout_key}_widget"
             )
             st.session_state[checkout_key] = checkout_date
 
-        # ✅ 计算晚数
+        # ✅ Calculate number of nights
         nights = (checkout_date - checkin_date).days
         if nights < 1:
             nights = 1
-            st.warning("⚠️ 离店日期必须晚于入住日期")
+            st.warning("⚠️ Check-out date must be after check-in date")
 
-        # ✅ 计算总价
+        # ✅ Calculate total price
         total_price = price_per_night * nights
 
-        # 显示计算结果
+        # Display calculation result
         st.markdown(f"""
         <div style='background: white; border: 1px solid #e5e7eb; border-radius: 8px; 
                     padding: 12px; margin-top: 16px; margin-bottom: 16px;'>
             <div style='text-align: center;'>
                 <div style='color: #6b7280; font-size: 13px; margin-bottom: 4px;'>
-                    {checkin_date.strftime('%Y年%m月%d日')} - {checkout_date.strftime('%Y年%m月%d日')}
+                    {checkin_date.strftime('%Y-%m-%d')} - {checkout_date.strftime('%Y-%m-%d')}
                 </div>
                 <div style='color: #10b981; font-size: 20px; font-weight: 700;'>
-                    共 {nights} 晚 × ¥{price_per_night:,}/晚 = ¥{total_price:,}
+                    Total {nights} night(s) × ¥{price_per_night:,}/night = ¥{total_price:,}
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # ✅ 预算检查
+        # ✅ Budget check
         can_afford = total_price <= remaining_budget
 
         if not can_afford:
             st.markdown(f"""
                 <div class='budget-warning-inline'>
-                    ⚠️ 预算不足 | 需要: ¥{total_price:,} | 剩余: ¥{remaining_budget:,}
+                    ⚠️ Insufficient budget | Required: ¥{total_price:,} | Remaining: ¥{remaining_budget:,}
                 </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
                 <div class='budget-ok-inline'>
-                    ✅ 预算充足 | 剩余预算: ¥{remaining_budget:,}
+                    ✅ Budget sufficient | Remaining budget: ¥{remaining_budget:,}
                 </div>
             """, unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # === 预订按钮 ===
+        # === Booking button ===
         st.markdown("<div style='margin-top: 16px;'>", unsafe_allow_html=True)
 
         if can_afford:
             if st.button(
-                f"✅ 预订 {nights}晚 - 总价 ¥{total_price:,}",
+                f"✅ Book {nights} night(s) - Total ¥{total_price:,}",
                 key=book_key,
                 type="primary",
                 use_container_width=True
             ):
                 if on_book_callback:
-                    # 准备完整的预订数据
+                    # Prepare complete booking data
                     hotel_with_booking = hotel.copy()
                     hotel_with_booking['nights'] = nights
                     hotel_with_booking['total_price'] = total_price
@@ -346,22 +346,22 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
 
                     on_book_callback(hotel_with_booking, total_price)
                 else:
-                    # 默认行为
+                    # Default behavior
                     st.session_state.total_spent = st.session_state.get("total_spent", 0) + total_price
                     st.success(f"""
-                    ✅ 预订成功！
+                    ✅ Booking successful!
                     
-                    - 酒店: {hotel.get('name')}
-                    - 入住: {checkin_date.strftime('%Y年%m月%d日')}
-                    - 离店: {checkout_date.strftime('%Y年%m月%d日')}
-                    - 晚数: {nights}晚
-                    - 总价: ¥{total_price:,}
+                    - Hotel: {hotel.get('name')}
+                    - Check-in: {checkin_date.strftime('%Y-%m-%d')}
+                    - Check-out: {checkout_date.strftime('%Y-%m-%d')}
+                    - Nights: {nights}
+                    - Total price: ¥{total_price:,}
                     """)
                     st.balloons()
                     st.rerun()
         else:
             st.button(
-                "❌ 预算不足，无法预订",
+                "❌ Insufficient budget, cannot book",
                 key=book_key,
                 disabled=True,
                 use_container_width=True
@@ -372,15 +372,15 @@ def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0, on_book_callb
 
 def display_hotel_list_v2(hotels, message_id=0, on_book_callback=None):
     """
-    现代化酒店列表展示
+    Modern hotel list display
 
-    参数:
-        hotels: 酒店列表
-        message_id: 消息ID
-        on_book_callback: 预订回调函数
+    Parameters:
+        hotels: List of hotels
+        message_id: Message ID
+        on_book_callback: Booking callback function
     """
     if not hotels:
-        st.info("未找到符合条件的酒店")
+        st.info("No hotels found matching the criteria")
         return
 
     remaining_budget = get_remaining_budget()
@@ -391,22 +391,22 @@ def display_hotel_list_v2(hotels, message_id=0, on_book_callback=None):
         <div style='background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; 
                     padding: 12px 16px; margin-bottom: 16px;'>
             <span style='color: #166534; font-size: 14px;'>
-                找到 <strong>{len(hotels)}</strong> 家酒店
+                Found <strong>{len(hotels)}</strong> hotels
             </span>
         </div>
         """, unsafe_allow_html=True)
 
     with col_budget:
-        st.metric("💰 剩余预算", f"¥{remaining_budget:,}")
+        st.metric("💰 Remaining budget", f"¥{remaining_budget:,}")
 
-    # 简洁筛选器
-    with st.expander("🔧 筛选条件", expanded=False):
+    # Compact filter
+    with st.expander("🔧 Filter criteria", expanded=False):
         col1, col2 = st.columns(2)
 
         with col1:
             default_max = min(1000, int(remaining_budget * 0.4)) if remaining_budget > 0 else 1000
             max_price = st.number_input(
-                "最高价格(元/晚)",
+                "Maximum price (yuan/night)",
                 min_value=0,
                 max_value=10000,
                 value=default_max,
@@ -416,7 +416,7 @@ def display_hotel_list_v2(hotels, message_id=0, on_book_callback=None):
 
         with col2:
             min_rating = st.slider(
-                "最低评分",
+                "Minimum rating",
                 min_value=0.0,
                 max_value=5.0,
                 value=0.0,
@@ -424,38 +424,38 @@ def display_hotel_list_v2(hotels, message_id=0, on_book_callback=None):
                 key=f"hotel_rating_{message_id}"
             )
 
-    # 筛选
+    # Filter
     filtered = [
         h for h in hotels
         if h.get('price', 0) <= max_price and h.get('rating', 0) >= min_rating
     ]
 
     if not filtered:
-        st.warning("没有符合筛选条件的酒店")
+        st.warning("No hotels match the filter criteria")
         return
 
-    # 按价格排序
+    # Sort by price
     filtered.sort(key=lambda x: x.get('price', 0))
 
-    # ✅ 显示酒店卡片（只有第一个展开）
+    # ✅ Display hotel cards (only first one expanded)
     for idx, hotel in enumerate(filtered[:10]):
         display_hotel_card_v2(
             hotel,
             key_prefix="hotel",
             message_id=message_id,
             on_book_callback=on_book_callback,
-            is_first=(idx == 0)  # 只有第一个酒店默认展开
+            is_first=(idx == 0)  # Only first hotel is expanded by default
         )
 
 
-# 测试代码
+# Test code
 if __name__ == "__main__":
-    st.set_page_config(page_title="酒店卡片 - 简洁折叠版", layout="wide")
+    st.set_page_config(page_title="Hotel Card - Compact Collapsible Version", layout="wide")
 
-    st.title("🏨 酒店卡片组件 - 简洁折叠版")
-    st.caption("只有第一个酒店默认展开，预订功能在展开区域内")
+    st.title("🏨 Hotel Card Component - Compact Collapsible Version")
+    st.caption("Only the first hotel is expanded by default, booking function is in the expanded area")
 
-    # 模拟预算状态
+    # Simulate budget state
     if "total_spent" not in st.session_state:
         st.session_state.total_spent = 0
 
@@ -466,65 +466,65 @@ if __name__ == "__main__":
             "end_date": datetime.now().date() + timedelta(days=3)
         }
 
-    # 侧边栏显示预算
+    # Display budget in sidebar
     with st.sidebar:
-        st.header("💰 预算管理")
+        st.header("💰 Budget Management")
         total_budget = st.session_state.current_trip["budget"]
         remaining = total_budget - st.session_state.total_spent
 
-        st.metric("总预算", f"¥{total_budget:,}")
-        st.metric("剩余", f"¥{remaining:,}", delta=f"-¥{st.session_state.total_spent:,}")
+        st.metric("Total budget", f"¥{total_budget:,}")
+        st.metric("Remaining", f"¥{remaining:,}", delta=f"-¥{st.session_state.total_spent:,}")
         st.progress(min(st.session_state.total_spent / total_budget, 1.0))
 
     test_hotels = [
         {
             'id': 1,
-            'name': '上海浦东香格里拉大酒店',
-            'location': '浦东新区',
-            'address': '浦东新区富城路33号',
+            'name': 'Pudong Shangri-La Hotel, Shanghai',
+            'location': 'Pudong New Area',
+            'address': '33 Fucheng Road, Pudong New Area',
             'tel': '021-68828888',
             'rating': 4.8,
             'price': 680,
-            'amenities': ['免费WiFi', '健身房', '游泳池', '商务中心', '停车场', '早餐']
+            'amenities': ['Free WiFi', 'Gym', 'Swimming Pool', 'Business Center', 'Parking', 'Breakfast']
         },
         {
             'id': 2,
-            'name': '如家快捷酒店',
-            'location': '人民广场',
-            'address': '黄浦区南京东路123号',
+            'name': 'Home Inn Express',
+            'location': 'People\'s Square',
+            'address': '123 Nanjing East Road, Huangpu District',
             'tel': '021-12345678',
             'rating': 4.2,
             'price': 299,
-            'amenities': ['免费WiFi', '24小时前台']
+            'amenities': ['Free WiFi', '24-hour Front Desk']
         },
         {
             'id': 3,
-            'name': '汉庭酒店',
-            'location': '虹桥机场',
-            'address': '闵行区虹桥路888号',
+            'name': 'Hanting Hotel',
+            'location': 'Hongqiao Airport',
+            'address': '888 Hongqiao Road, Minhang District',
             'tel': '021-87654321',
             'rating': 3.9,
             'price': 188,
-            'amenities': ['免费WiFi', '自助早餐']
+            'amenities': ['Free WiFi', 'Buffet Breakfast']
         },
     ]
 
     def test_booking_callback(hotel, price):
-        """测试预订回调"""
+        """Test booking callback"""
         st.session_state.total_spent += price
         nights = hotel.get('nights', 1)
         checkin = hotel.get('checkin_date')
         checkout = hotel.get('checkout_date')
 
         st.success(f"""
-        ✅ 预订成功!
+        ✅ Booking successful!
         
-        - 酒店: {hotel['name']}
-        - 入住: {checkin.strftime('%Y年%m月%d日')}
-        - 离店: {checkout.strftime('%Y年%m月%d日')}
-        - 晚数: {nights}晚
-        - 总价: ¥{price:,}
-        - 剩余预算: ¥{get_remaining_budget():,}
+        - Hotel: {hotel['name']}
+        - Check-in: {checkin.strftime('%Y-%m-%d')}
+        - Check-out: {checkout.strftime('%Y-%m-%d')}
+        - Nights: {nights}
+        - Total price: ¥{price:,}
+        - Remaining budget: ¥{get_remaining_budget():,}
         """)
         st.balloons()
 

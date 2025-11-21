@@ -1,11 +1,11 @@
 """
-仿真机票卡片组件 - 统一预算版
-特点:
-1. 清晰显示起飞地 → 目的地
-2. 舱位选择(经济舱、商务舱、头等舱)
-3. 💰 统一预算检查
-4. ✅ 预订成功弹窗
-5. 浅绿色配色
+Simulated Flight Card Component - Unified Budget Version
+Features:
+1. Clear display of Origin -> Destination
+2. Cabin selection (Economy, Business, First Class)
+3. 💰 Unified budget check
+4. ✅ Booking success pop-up
+5. Light green color scheme
 """
 
 import streamlit as st
@@ -13,7 +13,7 @@ from datetime import datetime
 
 
 def get_remaining_budget():
-    """获取剩余预算 - 与chat.py保持一致"""
+    """Get remaining budget - consistent with chat.py"""
     if "current_trip" in st.session_state and "total_spent" in st.session_state:
         total_budget = st.session_state.current_trip.get("budget", 5000)
         return total_budget - st.session_state.total_spent
@@ -22,13 +22,13 @@ def get_remaining_budget():
 
 def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_callback=None):
     """
-    仿真机票卡片展示 - 带统一预算检查
+    Simulated Flight Card Display - with Unified Budget Check
 
-    参数:
-        flight: 航班数据字典
-        key_prefix: 按钮key前缀
-        message_id: 消息ID
-        on_book_callback: 预订回调函数
+    Parameters:
+        flight: Flight data dictionary
+        key_prefix: Button key prefix
+        message_id: Message ID
+        on_book_callback: Booking callback function
     """
 
     st.markdown("""
@@ -166,23 +166,23 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
     if cabin_key not in st.session_state:
         st.session_state[cabin_key] = "economy"
 
-    # 舱位价格配置
+    # Cabin Price Configuration
     base_price = flight.get('price', flight.get('total_price', 0))
     cabin_prices = {
-        "economy": {"name": "经济舱", "price": base_price, "multiplier": 1.0},
-        "business": {"name": "商务舱", "price": int(base_price * 2.5), "multiplier": 2.5},
-        "first": {"name": "头等舱", "price": int(base_price * 4.0), "multiplier": 4.0}
+        "economy": {"name": "Economy Class", "price": base_price, "multiplier": 1.0},
+        "business": {"name": "Business Class", "price": int(base_price * 2.5), "multiplier": 2.5},
+        "first": {"name": "First Class", "price": int(base_price * 4.0), "multiplier": 4.0}
     }
 
-    # ✅ 获取剩余预算
+    # ✅ Get remaining budget
     remaining_budget = get_remaining_budget()
 
     with st.container():
         st.markdown("<div class='flight-card-realistic'>", unsafe_allow_html=True)
 
-        # 航线显示
-        origin = flight.get('origin', '出发地')
-        destination = flight.get('destination', '目的地')
+        # Route Display
+        origin = flight.get('origin', 'Origin')
+        destination = flight.get('destination', 'Destination')
 
         origin_code = origin[:3].upper() if len(origin) <= 4 else origin[:3].upper()
         dest_code = destination[:3].upper() if len(destination) <= 4 else destination[:3].upper()
@@ -201,8 +201,8 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
         </div>
         """, unsafe_allow_html=True)
 
-        # 基本信息
-        carrier_name = flight.get('carrier_name', flight.get('carrier_code', '航空公司'))
+        # Basic Information
+        carrier_name = flight.get('carrier_name', flight.get('carrier_code', 'Airline'))
         flight_number = flight.get('flight_number', 'XXXX')
         departure_time = flight.get('departure_time', 'N/A')
         arrival_time = flight.get('arrival_time', 'N/A')
@@ -223,31 +223,31 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
                 </div>
             """, unsafe_allow_html=True)
 
-        # 时间信息卡片
+        # Time Information Card
         st.markdown(f"""
         <div class='flight-basic-info'>
             <div class='flight-info-item'>
-                <div class='flight-info-label'>起飞时间</div>
+                <div class='flight-info-label'>Departure Time</div>
                 <div class='flight-info-value'>{departure_time}</div>
             </div>
             <div class='flight-info-item'>
-                <div class='flight-info-label'>飞行时长</div>
+                <div class='flight-info-label'>Flight Duration</div>
                 <div class='flight-info-value'>{duration}</div>
             </div>
             <div class='flight-info-item'>
-                <div class='flight-info-label'>到达时间</div>
+                <div class='flight-info-label'>Arrival Time</div>
                 <div class='flight-info-value'>{arrival_time}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # 舱位选择和价格显示
+        # Cabin Selection and Price Display
         col_cabin, col_price, col_btn = st.columns([2, 1.5, 1.5])
 
         with col_cabin:
-            st.markdown("**选择舱位**")
+            st.markdown("**Select Cabin**")
             selected_cabin = st.selectbox(
-                "舱位",
+                "Cabin",
                 options=list(cabin_prices.keys()),
                 format_func=lambda x: cabin_prices[x]["name"],
                 key=cabin_key,
@@ -255,9 +255,9 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
             )
 
             cabin_info = {
-                "economy": "标准座椅 • 20kg行李",
-                "business": "平躺座椅 • 30kg行李 • 贵宾休息室",
-                "first": "豪华座椅 • 40kg行李 • 专属服务"
+                "economy": "Standard Seat • 20kg Baggage",
+                "business": "Lie-flat Seat • 30kg Baggage • Lounge Access",
+                "first": "Luxury Seat • 40kg Baggage • Exclusive Service"
             }
             st.caption(cabin_info[selected_cabin])
 
@@ -273,7 +273,7 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
         with col_btn:
             st.markdown("<div style='padding-top: 8px;'></div>", unsafe_allow_html=True)
 
-            button_text = "收起详情" if st.session_state[details_key] else "查看详情"
+            button_text = "Hide Details" if st.session_state[details_key] else "View Details"
             if st.button(
                 button_text,
                 key=details_key + "_btn",
@@ -282,18 +282,18 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
                 st.session_state[details_key] = not st.session_state[details_key]
                 st.rerun()
 
-            # ✅ 预订按钮 - 带预算检查
+            # ✅ Booking Button - with Budget Check
             can_afford = current_price <= remaining_budget
 
             if can_afford:
                 if st.button(
-                    "预订",
+                    "Book",
                     key=book_key,
                     type="primary",
                     use_container_width=True
                 ):
                     if on_book_callback:
-                        # 准备航班数据(包含选中的舱位)
+                        # Prepare flight data (including selected cabin)
                         flight_data = flight.copy()
                         flight_data['cabin_class'] = cabin_prices[selected_cabin]["name"]
                         flight_data['price'] = current_price
@@ -301,77 +301,77 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
                         on_book_callback("flight", flight_data, current_price)
                         st.rerun()
                     else:
-                        # 默认行为
+                        # Default behavior
                         st.session_state.total_spent = st.session_state.get("total_spent", 0) + current_price
                         st.success(f"""
-                        ✅ 预订成功!
+                        ✅ Booking Successful!
                         
-                        - 航班: {carrier_name} {flight_number}
-                        - 舱位: {cabin_prices[selected_cabin]['name']}
-                        - 价格: ¥{current_price:,}
-                        - 剩余预算: ¥{get_remaining_budget():,}
+                        - Flight: {carrier_name} {flight_number}
+                        - Cabin: {cabin_prices[selected_cabin]['name']}
+                        - Price: ¥{current_price:,}
+                        - Remaining Budget: ¥{get_remaining_budget():,}
                         """)
                         st.balloons()
                         st.rerun()
             else:
                 st.button(
-                    "预算不足",
+                    "Budget Insufficient",
                     key=book_key,
                     disabled=True,
                     use_container_width=True
                 )
 
-        # ✅ 预算提示
+        # ✅ Budget Tip
         if not can_afford:
             st.markdown(f"""
                 <div class='budget-warning-flight'>
-                    💰 预算不足 | 需要: ¥{current_price:,} | 剩余: ¥{remaining_budget:,}
+                    💰 Budget Insufficient | Needed: ¥{current_price:,} | Remaining: ¥{remaining_budget:,}
                 </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
                 <div class='budget-ok-flight'>
-                    ✅ 预算充足 | 剩余: ¥{remaining_budget:,}
+                    ✅ Budget Sufficient | Remaining: ¥{remaining_budget:,}
                 </div>
             """, unsafe_allow_html=True)
 
-        # 详情展开区域
+        # Details Expansion Area
         if st.session_state[details_key]:
             st.markdown("""
             <div style='background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; 
                         padding: 16px; margin-top: 12px;'>
             """, unsafe_allow_html=True)
 
-            aircraft = flight.get('aircraft', '波音737')
+            aircraft = flight.get('aircraft', 'Boeing 737')
             stops = flight.get('stops', 0)
             available_seats = flight.get('available_seats', 20)
 
             st.markdown(f"""
             <div style='display: flex; justify-content: space-between; padding: 8px 0; 
                         border-bottom: 1px solid #e5e7eb; font-size: 14px;'>
-                <span style='color: #6b7280; font-weight: 500;'>航班号</span>
+                <span style='color: #6b7280; font-weight: 500;'>Flight Number</span>
                 <span style='color: #111827; font-weight: 600;'>{carrier_name} {flight_number}</span>
             </div>
             <div style='display: flex; justify-content: space-between; padding: 8px 0; 
                         border-bottom: 1px solid #e5e7eb; font-size: 14px;'>
-                <span style='color: #6b7280; font-weight: 500;'>机型</span>
+                <span style='color: #6b7280; font-weight: 500;'>Aircraft Type</span>
                 <span style='color: #111827; font-weight: 600;'>{aircraft}</span>
             </div>
             <div style='display: flex; justify-content: space-between; padding: 8px 0; 
                         border-bottom: 1px solid #e5e7eb; font-size: 14px;'>
-                <span style='color: #6b7280; font-weight: 500;'>经停</span>
-                <span style='color: #111827; font-weight: 600;'>{'直飞' if stops == 0 else f'{stops}次经停'}</span>
+                <span style='color: #6b7280; font-weight: 500;'>Stops</span>
+                <span style='color: #111827; font-weight: 600;'>{'Non-stop' if stops == 0 else f'{stops} stop{"s" if stops > 1 else ""}'}</span>
             </div>
             <div style='display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px;'>
-                <span style='color: #6b7280; font-weight: 500;'>剩余座位</span>
-                <span style='color: #111827; font-weight: 600;'>{available_seats}个</span>
+                <span style='color: #6b7280; font-weight: 500;'>Available Seats</span>
+                <span style='color: #111827; font-weight: 600;'>{available_seats} seats</span>
             </div>
             """, unsafe_allow_html=True)
 
-            # 舱位对比
+            # Cabin Comparison
             st.markdown("<div style='margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;'>",
                        unsafe_allow_html=True)
-            st.markdown("<span style='color: #6b7280; font-weight: 500;'>各舱位价格对比</span>", unsafe_allow_html=True)
+            st.markdown("<span style='color: #6b7280; font-weight: 500;'>Price Comparison by Cabin</span>", unsafe_allow_html=True)
             st.markdown("<div style='margin-top: 8px;'>", unsafe_allow_html=True)
 
             cols = st.columns(3)
@@ -381,7 +381,7 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
                     border_color = "#10b981" if is_selected else "#e5e7eb"
                     bg_color = "#f0fdf4" if is_selected else "#ffffff"
 
-                    # ✅ 检查该舱位是否可负担
+                    # ✅ Check if this cabin is affordable
                     cabin_can_afford = cabin_data['price'] <= remaining_budget
 
                     st.markdown(f"""
@@ -394,23 +394,23 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
                             ¥{cabin_data['price']:,}
                         </div>
                         <div style='font-size: 11px; color: {"#065f46" if cabin_can_afford else "#991b1b"};'>
-                            {"✅ 可负担" if cabin_can_afford else "❌ 预算不足"}
+                            {"✅ Affordable" if cabin_can_afford else "❌ Budget Insufficient"}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
 
             st.markdown("</div></div>", unsafe_allow_html=True)
 
-            # 服务说明
+            # Service Description
             st.markdown("<div style='margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;'>",
                        unsafe_allow_html=True)
-            st.markdown("<span style='color: #6b7280; font-weight: 500;'>服务说明</span>", unsafe_allow_html=True)
+            st.markdown("<span style='color: #6b7280; font-weight: 500;'>Service Description</span>", unsafe_allow_html=True)
 
             service_items = [
-                "✓ 免费WiFi(部分航班)",
-                "✓ 机上娱乐系统",
-                "✓ 餐食饮料服务",
-                "✓ 免费改期(限当日)"
+                "✓ Free Wi-Fi (select flights)",
+                "✓ In-flight entertainment system",
+                "✓ Meal and beverage service",
+                "✓ Free rebooking (same day only)"
             ]
 
             for item in service_items:
@@ -428,18 +428,18 @@ def display_flight_card_v2(flight, key_prefix="flight", message_id=0, on_book_ca
 
 def display_flight_list_v2(flights, message_id=0, on_book_callback=None):
     """
-    航班列表展示 - 带统一预算管理
+    Flight List Display - with Unified Budget Management
 
-    参数:
-        flights: 航班列表
-        message_id: 消息ID
-        on_book_callback: 预订回调函数
+    Parameters:
+        flights: List of flights
+        message_id: Message ID
+        on_book_callback: Booking callback function
     """
     if not flights:
-        st.info("未找到符合条件的航班")
+        st.info("No flights matching the criteria were found.")
         return
 
-    # ✅ 显示剩余预算
+    # ✅ Display remaining budget
     remaining_budget = get_remaining_budget()
 
     col_result, col_budget = st.columns([2, 1])
@@ -448,21 +448,21 @@ def display_flight_list_v2(flights, message_id=0, on_book_callback=None):
         <div style='background: #d1fae5; border: 1px solid #10b981; border-radius: 8px; 
                     padding: 12px 16px; margin-bottom: 16px;'>
             <span style='color: #047857; font-size: 14px;'>
-                找到 <strong>{len(flights)}</strong> 个航班
+                Found <strong>{len(flights)}</strong> flights
             </span>
         </div>
         """, unsafe_allow_html=True)
 
     with col_budget:
-        st.metric("💰 剩余预算", f"¥{remaining_budget:,}")
+        st.metric("💰 Remaining Budget", f"¥{remaining_budget:,}")
 
-    # 筛选器
-    with st.expander("筛选条件", expanded=False):
+    # Filter
+    with st.expander("Filter Options", expanded=False):
         col1, col2, col3 = st.columns(3)
 
         with col1:
             max_price = st.number_input(
-                "最高价格(元)",
+                "Max Price (Yuan)",
                 min_value=0,
                 max_value=10000,
                 value=min(5000, int(remaining_budget)) if remaining_budget > 0 else 5000,
@@ -472,65 +472,65 @@ def display_flight_list_v2(flights, message_id=0, on_book_callback=None):
 
         with col2:
             flight_time = st.selectbox(
-                "时间段",
-                options=["全部", "上午(06:00-12:00)", "下午(12:00-18:00)", "晚上(18:00-24:00)"],
+                "Time Slot",
+                options=["All", "Morning (06:00-12:00)", "Afternoon (12:00-18:00)", "Evening (18:00-24:00)"],
                 key=f"flight_time_{message_id}"
             )
 
         with col3:
             stops_filter = st.selectbox(
-                "经停",
-                options=["全部", "仅直飞", "1次经停"],
+                "Stops",
+                options=["All", "Non-stop Only", "1 Stop"],
                 key=f"flight_stops_{message_id}"
             )
 
-    # 筛选航班
+    # Filter flights
     filtered = []
     for flight in flights:
         if flight.get('price', 0) > max_price:
             continue
 
-        if flight_time != "全部":
+        if flight_time != "All":
             dep_time = flight.get('departure_time', '00:00')
             hour = int(dep_time.split(':')[0])
 
-            if flight_time == "上午(06:00-12:00)" and not (6 <= hour < 12):
+            if flight_time == "Morning (06:00-12:00)" and not (6 <= hour < 12):
                 continue
-            elif flight_time == "下午(12:00-18:00)" and not (12 <= hour < 18):
+            elif flight_time == "Afternoon (12:00-18:00)" and not (12 <= hour < 18):
                 continue
-            elif flight_time == "晚上(18:00-24:00)" and not (18 <= hour < 24):
+            elif flight_time == "Evening (18:00-24:00)" and not (18 <= hour < 24):
                 continue
 
         stops = flight.get('stops', 0)
-        if stops_filter == "仅直飞" and stops != 0:
+        if stops_filter == "Non-stop Only" and stops != 0:
             continue
-        elif stops_filter == "1次经停" and stops != 1:
+        elif stops_filter == "1 Stop" and stops != 1:
             continue
 
         filtered.append(flight)
 
     if not filtered:
-        st.warning("没有符合筛选条件的航班")
+        st.warning("No flights match the filtering criteria.")
         return
 
-    # 排序选项
+    # Sorting options
     col_sort1, col_sort2 = st.columns([3, 1])
     with col_sort2:
         sort_by = st.selectbox(
-            "排序",
-            options=["价格从低到高", "价格从高到低", "起飞时间"],
+            "Sort By",
+            options=["Price: Low to High", "Price: High to Low", "Departure Time"],
             key=f"flight_sort_{message_id}",
             label_visibility="collapsed"
         )
 
-    if sort_by == "价格从低到高":
+    if sort_by == "Price: Low to High":
         filtered.sort(key=lambda x: x.get('price', 0))
-    elif sort_by == "价格从高到低":
+    elif sort_by == "Price: High to Low":
         filtered.sort(key=lambda x: x.get('price', 0), reverse=True)
-    elif sort_by == "起飞时间":
+    elif sort_by == "Departure Time":
         filtered.sort(key=lambda x: x.get('departure_time', '00:00'))
 
-    # 显示航班卡片
+    # Display flight cards
     for flight in filtered[:10]:
         display_flight_card_v2(
             flight,
@@ -540,75 +540,75 @@ def display_flight_list_v2(flights, message_id=0, on_book_callback=None):
         )
 
 
-# 测试代码
+# Testing code
 if __name__ == "__main__":
-    st.set_page_config(page_title="仿真机票卡片 - 统一预算版", layout="wide")
+    st.set_page_config(page_title="Simulated Flight Card - Unified Budget Version", layout="wide")
 
-    st.title("仿真机票卡片组件 - 统一预算版")
-    st.caption("演示统一预算管理和舱位选择")
+    st.title("Simulated Flight Card Component - Unified Budget Version")
+    st.caption("Demonstrates unified budget management and cabin selection")
 
-    # 模拟预算状态
+    # Mock budget state
     if "total_spent" not in st.session_state:
         st.session_state.total_spent = 0
 
     if "current_trip" not in st.session_state:
         st.session_state.current_trip = {"budget": 5000}
 
-    # 侧边栏显示预算
+    # Sidebar budget display
     with st.sidebar:
-        st.header("💰 预算管理")
+        st.header("💰 Budget Management")
         total_budget = st.session_state.current_trip["budget"]
         remaining = total_budget - st.session_state.total_spent
 
-        st.metric("总预算", f"¥{total_budget:,}")
-        st.metric("剩余", f"¥{remaining:,}", delta=f"-¥{st.session_state.total_spent:,}")
+        st.metric("Total Budget", f"¥{total_budget:,}")
+        st.metric("Remaining", f"¥{remaining:,}", delta=f"-¥{st.session_state.total_spent:,}")
         st.progress(min(st.session_state.total_spent / total_budget, 1.0))
 
     test_flights = [
         {
             'id': 1,
             'carrier_code': 'CA',
-            'carrier_name': '中国国航',
+            'carrier_name': 'Air China',
             'flight_number': '1234',
-            'origin': '北京',
-            'destination': '上海',
+            'origin': 'Beijing',
+            'destination': 'Shanghai',
             'departure_time': '08:30',
             'arrival_time': '11:00',
             'departure_date': '2025-01-15',
-            'duration': '2小时30分钟',
+            'duration': '2 hours 30 minutes',
             'price': 850,
-            'aircraft': '波音737',
+            'aircraft': 'Boeing 737',
             'stops': 0,
             'available_seats': 25
         },
         {
             'id': 2,
             'carrier_code': 'MU',
-            'carrier_name': '东方航空',
+            'carrier_name': 'China Eastern',
             'flight_number': '5678',
-            'origin': '北京',
-            'destination': '上海',
+            'origin': 'Beijing',
+            'destination': 'Shanghai',
             'departure_time': '14:15',
             'arrival_time': '16:50',
             'departure_date': '2025-01-15',
-            'duration': '2小时35分钟',
+            'duration': '2 hours 35 minutes',
             'price': 720,
-            'aircraft': '空客A320',
+            'aircraft': 'Airbus A320',
             'stops': 0,
             'available_seats': 18
         }
     ]
 
     def test_booking_callback(order_type, flight, price):
-        """测试预订回调"""
+        """Test booking callback"""
         st.session_state.total_spent += price
         st.success(f"""
-        ✅ 预订成功!
+        ✅ Booking Successful!
         
-        - 航班: {flight['carrier_name']} {flight['flight_number']}
-        - 舱位: {flight.get('cabin_class', 'N/A')}
-        - 价格: ¥{price:,}
-        - 剩余预算: ¥{get_remaining_budget():,}
+        - Flight: {flight['carrier_name']} {flight['flight_number']}
+        - Cabin: {flight.get('cabin_class', 'N/A')}
+        - Price: ¥{price:,}
+        - Remaining Budget: ¥{get_remaining_budget():,}
         """)
         st.balloons()
 
