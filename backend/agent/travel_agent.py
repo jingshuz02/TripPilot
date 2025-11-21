@@ -1,12 +1,13 @@
 """
-TripPilot Travel Agent - 修复版
-修复了API超时问题
+TripPilot Travel Agent - 更新版
+更新内容：增强机票数据生成，包含起飞地和目的地信息
 """
 
 import json
 import time
+import random
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 from config.config import Config
 
@@ -33,7 +34,6 @@ class TravelAgent:
 
     def init_tools(self):
         """初始化工具"""
-        # 检查API配置
         tools_status = []
 
         if Config.GAODE_API_KEY:
@@ -227,7 +227,7 @@ class TravelAgent:
             return {
                 "action": "search_flights",
                 "content": ai_response.get("content", ""),
-                "data": None,
+                "data": self._generate_mock_flights(preferences),
                 "suggestions": [
                     "查看返程航班",
                     "调整出发时间",
@@ -235,7 +235,9 @@ class TravelAgent:
                 ]
             }
         else:
-            return self._generate_fallback_response("flight", context, preferences)
+            fallback = self._generate_fallback_response("flight", context, preferences)
+            fallback["data"] = self._generate_mock_flights(preferences)
+            return fallback
 
     def _handle_weather_query(self, context: str, preferences: Dict) -> Dict:
         """处理天气查询"""
@@ -259,7 +261,7 @@ class TravelAgent:
             return {
                 "action": "weather",
                 "content": ai_response.get("content", ""),
-                "data": None,
+                "data": self._generate_mock_weather(preferences),
                 "suggestions": [
                     "查看更多天气详情",
                     "了解最佳旅行季节",
@@ -267,7 +269,9 @@ class TravelAgent:
                 ]
             }
         else:
-            return self._generate_fallback_response("weather", context, preferences)
+            fallback = self._generate_fallback_response("weather", context, preferences)
+            fallback["data"] = self._generate_mock_weather(preferences)
+            return fallback
 
     def _handle_attraction_query(self, context: str, preferences: Dict) -> Dict:
         """处理景点查询"""
@@ -329,22 +333,7 @@ class TravelAgent:
             }
 
     def _call_deepseek_api(self, prompt: str, max_retries: int = 3) -> Dict:
-        """
-        调用DeepSeek API - 修复版
-
-        修复内容：
-        1. 增加超时时间到60秒（原来15秒太短）
-        2. 增加重试次数到3次
-        3. 添加更详细的错误信息
-        4. 优化重试逻辑
-
-        Args:
-            prompt: 提示词
-            max_retries: 最大重试次数
-
-        Returns:
-            API响应
-        """
+        """调用DeepSeek API"""
         print("🚀 调用DeepSeek API...")
 
         headers = {
@@ -366,12 +355,11 @@ class TravelAgent:
             try:
                 print(f"📡 尝试第 {attempt + 1}/{max_retries} 次请求...")
 
-                # ✅ 修复：增加超时时间到60秒
                 response = requests.post(
                     f"{self.base_url}/v1/chat/completions",
                     headers=headers,
                     json=data,
-                    timeout=60  # 从15秒增加到60秒
+                    timeout=60
                 )
 
                 if response.status_code == 200:
@@ -380,7 +368,6 @@ class TravelAgent:
                     print(f"✅ API响应成功，长度：{len(content)}字符")
                     return {"content": content}
                 elif response.status_code == 429:
-                    # 速率限制
                     print(f"⚠️ API速率限制，等待后重试...")
                     wait_time = 5 * (attempt + 1)
                     time.sleep(wait_time)
@@ -471,7 +458,6 @@ class TravelAgent:
 
     def _extract_planning_data(self, content: str) -> Dict:
         """从AI生成的内容中提取结构化数据"""
-        # 这里可以使用更复杂的提取逻辑
         data = {
             "destination": "",
             "days": 0,
@@ -481,7 +467,6 @@ class TravelAgent:
 
         # 简单的提取逻辑示例
         if "天" in content:
-            # 尝试提取天数
             import re
             days_match = re.search(r'(\d+)天', content)
             if days_match:
@@ -494,35 +479,209 @@ class TravelAgent:
         destination = preferences.get("destination", "城市") if preferences else "城市"
         budget = preferences.get("budget", 5000) if preferences else 5000
 
-        # 根据预算生成不同档次的酒店
         hotels = [
             {
                 "id": "hotel_001",
                 "name": f"{destination}希尔顿酒店",
                 "location": f"{destination}市中心",
-                "price": int(budget * 0.15),  # 每晚预算的15%
+                "address": f"{destination}市中心商业区88号",
+                "tel": "400-820-0000",
+                "price": int(budget * 0.15),
                 "rating": 4.8,
-                "amenities": ["免费WiFi", "健身房", "游泳池"]
+                "amenities": ["免费WiFi", "健身房", "游泳池", "商务中心", "早餐"]
             },
             {
                 "id": "hotel_002",
                 "name": f"{destination}商务酒店",
                 "location": f"{destination}商业区",
-                "price": int(budget * 0.1),  # 每晚预算的10%
+                "address": f"{destination}商业区中心路123号",
+                "tel": "400-123-4567",
+                "price": int(budget * 0.1),
                 "rating": 4.2,
-                "amenities": ["免费WiFi", "早餐"]
+                "amenities": ["免费WiFi", "早餐", "停车场"]
             },
             {
                 "id": "hotel_003",
                 "name": f"{destination}精品民宿",
                 "location": f"{destination}老城区",
-                "price": int(budget * 0.08),  # 每晚预算的8%
+                "address": f"{destination}老城区文化街45号",
+                "tel": "400-888-9999",
+                "price": int(budget * 0.08),
                 "rating": 4.5,
-                "amenities": ["特色装修", "本地体验"]
+                "amenities": ["特色装修", "本地体验", "免费WiFi"]
+            },
+            {
+                "id": "hotel_004",
+                "name": f"{destination}快捷酒店",
+                "location": f"{destination}火车站附近",
+                "address": f"{destination}火车站广场1号",
+                "tel": "400-666-7777",
+                "price": int(budget * 0.05),
+                "rating": 4.0,
+                "amenities": ["免费WiFi", "24小时前台"]
+            },
+            {
+                "id": "hotel_005",
+                "name": f"{destination}豪华度假酒店",
+                "location": f"{destination}景区旁",
+                "address": f"{destination}风景区入口处",
+                "tel": "400-999-0000",
+                "price": int(budget * 0.2),
+                "rating": 4.9,
+                "amenities": ["免费WiFi", "健身房", "游泳池", "SPA", "景区接送", "豪华早餐"]
             }
         ]
 
         return hotels
+
+    def _generate_mock_flights(self, preferences: Dict) -> List[Dict]:
+        """
+        生成模拟航班数据 - 增强版
+
+        Args:
+            preferences: 用户偏好设置
+
+        Returns:
+            航班列表
+        """
+        destination = preferences.get("destination", "目的地") if preferences else "目的地"
+        origin = preferences.get("origin", "出发地") if preferences else "出发地"
+        start_date = preferences.get("start_date", datetime.now().strftime("%Y-%m-%d"))
+
+        # 如果没有指定出发地，根据目的地智能推断
+        if origin == "出发地":
+            # 常见的出发地选择
+            major_cities = ["北京", "上海", "广州", "深圳", "成都", "杭州"]
+            # 如果目的地在列表中，选择另一个城市作为出发地
+            if destination in major_cities:
+                origin = random.choice([c for c in major_cities if c != destination])
+            else:
+                origin = "北京"  # 默认北京出发
+
+        # 航空公司列表
+        airlines = [
+            {"code": "CA", "name": "中国国航"},
+            {"code": "MU", "name": "东方航空"},
+            {"code": "CZ", "name": "南方航空"},
+            {"code": "HU", "name": "海南航空"},
+            {"code": "3U", "name": "四川航空"},
+        ]
+
+        flights = []
+        base_times = ["07:30", "09:45", "12:00", "14:30", "17:15", "19:40"]
+
+        for i, (time_str, airline) in enumerate(zip(base_times[:5], airlines)):
+            # 计算到达时间（假设飞行2-3小时）
+            hour, minute = map(int, time_str.split(":"))
+            flight_duration = random.randint(120, 180)  # 2-3小时
+            arrival_hour = hour + flight_duration // 60
+            arrival_minute = minute + flight_duration % 60
+            if arrival_minute >= 60:
+                arrival_hour += 1
+                arrival_minute -= 60
+            arrival_time = f"{arrival_hour:02d}:{arrival_minute:02d}"
+
+            # 价格随时间段变化
+            base_price = random.randint(800, 2500)
+
+            flights.append({
+                "id": f"flight_{i+1:03d}",
+                "carrier_code": airline["code"],
+                "carrier_name": airline["name"],
+                "flight_number": f"{random.randint(10000, 99999)}",  # ✅ 修改为5位数航班号
+                "origin": origin,  # ✅ 添加起飞地
+                "destination": destination,  # ✅ 添加目的地
+                "departure_time": time_str,
+                "arrival_time": arrival_time,
+                "departure_date": start_date,
+                "duration": f"{flight_duration // 60}小时{flight_duration % 60}分钟",
+                "price": base_price,
+                "total_price": base_price,
+                "cabin_class": "经济舱",
+                "stops": 0,
+                "aircraft": random.choice(["波音737", "空客A320", "波音787", "空客A330"]),
+                "available_seats": random.randint(5, 30)
+            })
+
+        # 按价格排序
+        flights.sort(key=lambda x: x["price"])
+
+        return flights
+
+    def _generate_mock_weather(self, preferences: Dict) -> Dict:
+        """生成模拟天气数据"""
+        destination = preferences.get("destination", "目的地") if preferences else "目的地"
+
+        # 根据月份生成合理的温度范围
+        month = datetime.now().month
+
+        # 温度基准
+        if month in [12, 1, 2]:  # 冬季
+            base_temp = random.randint(0, 10)
+            weather_options = ["晴", "多云", "阴", "小雪", "晴转多云"]
+        elif month in [3, 4, 5]:  # 春季
+            base_temp = random.randint(15, 25)
+            weather_options = ["晴", "多云", "小雨", "晴转多云", "阴"]
+        elif month in [6, 7, 8]:  # 夏季
+            base_temp = random.randint(28, 35)
+            weather_options = ["晴", "多云", "雷阵雨", "晴转多云", "大雨"]
+        else:  # 秋季
+            base_temp = random.randint(15, 25)
+            weather_options = ["晴", "多云", "小雨", "晴转多云", "阴"]
+
+        # 根据城市名调整
+        temp_adjustment = 0
+        if any(city in destination for city in ["三亚", "海南", "广州", "深圳"]):
+            temp_adjustment = 8
+        elif any(city in destination for city in ["哈尔滨", "长春", "沈阳"]):
+            temp_adjustment = -10
+        elif any(city in destination for city in ["昆明", "丽江"]):
+            temp_adjustment = -3
+
+        temperature = base_temp + temp_adjustment
+        feels_like = temperature + random.randint(-3, 3)
+
+        weather_data = {
+            "city": destination,
+            "location": destination,
+            "temperature": temperature,
+            "feels_like": feels_like,
+            "weather": random.choice(weather_options),
+            "description": random.choice(weather_options),
+            "humidity": random.randint(40, 85),
+            "wind_speed": f"{random.uniform(1.0, 8.0):.1f} m/s",
+            "wind_direction": random.choice(["东风", "西风", "南风", "北风", "东南风", "西北风"]),
+            "visibility": f"{random.randint(8, 20)} km",
+            "pressure": f"{random.randint(1000, 1025)} hPa",
+            "uv_index": random.randint(1, 11),
+            "sunrise": "06:30",
+            "sunset": "18:45",
+            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "forecast": self._generate_forecast(temperature, weather_options)
+        }
+
+        return weather_data
+
+    def _generate_forecast(self, base_temp: int, weather_options: list) -> List[Dict]:
+        """生成未来几天的天气预报"""
+        forecast = []
+
+        for i in range(1, 5):
+            date = datetime.now() + timedelta(days=i)
+            weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][date.weekday()]
+
+            temp_high = base_temp + random.randint(0, 5)
+            temp_low = base_temp - random.randint(3, 8)
+
+            forecast.append({
+                "date": f"{date.month}/{date.day} {weekday}",
+                "temp_high": temp_high,
+                "temp_low": temp_low,
+                "weather": random.choice(weather_options),
+                "description": random.choice(weather_options)
+            })
+
+        return forecast
 
     def _generate_suggestions(self, context: str) -> List[str]:
         """生成相关建议"""
@@ -537,7 +696,7 @@ class TravelAgent:
         else:
             suggestions.extend(["告诉我更多需求", "查看热门推荐", "开始规划行程"])
 
-        return suggestions[:3]  # 只返回前3个建议
+        return suggestions[:3]
 
 # 导出Agent类
 __all__ = ['TravelAgent']

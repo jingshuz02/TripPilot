@@ -1,163 +1,114 @@
 """
-增强版天气组件
-增加了更多信息展示
+修复版天气组件 - 简化emoji，修复HTML渲染问题
 """
 
 import streamlit as st
 from datetime import datetime, timedelta
+import random
+
 
 def get_weather_emoji(condition):
     """根据天气状况返回对应的emoji"""
     weather_emojis = {
-        "clear": "☀️", "sunny": "☀️", "晴": "☀️", "晴朗": "☀️",
-        "cloudy": "☁️", "多云": "☁️", "阴": "☁️",
+        "clear": "☀", "sunny": "☀", "晴": "☀", "晴朗": "☀",
+        "cloudy": "☁", "多云": "☁", "阴": "☁",
         "partly_cloudy": "⛅", "晴转多云": "⛅",
-        "rainy": "🌧️", "小雨": "🌧️", "中雨": "🌧️", "大雨": "⛈️",
-        "stormy": "⛈️", "雷雨": "⛈️",
-        "snowy": "🌨️", "雪": "❄️", "小雪": "🌨️",
-        "foggy": "🌫️", "雾": "🌫️",
+        "rainy": "🌧", "小雨": "🌧", "中雨": "🌧", "大雨": "⛈",
+        "stormy": "⛈", "雷雨": "⛈",
+        "snowy": "🌨", "雪": "❄", "小雪": "🌨",
+        "foggy": "🌫", "雾": "🌫",
         "windy": "💨", "大风": "💨"
     }
 
     for key, emoji in weather_emojis.items():
         if key in str(condition).lower():
             return emoji
-    return "🌤️"
+    return "🌤"
 
 
 def display_weather_enhanced(weather_data, city_name="城市"):
     """
-    显示增强版天气信息
+    显示增强版天气信息 - 修复版
 
     参数:
         weather_data: 天气数据字典
         city_name: 城市名称
     """
 
-    # 美化CSS样式
+    # 修复后的CSS样式 - 使用浅绿色
     st.markdown("""
     <style>
-    .weather-enhanced-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 30px;
-        border-radius: 20px;
+    .weather-card-fixed {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        padding: 25px;
+        border-radius: 16px;
         color: white;
-        margin: 20px 0;
-        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        margin: 16px 0;
+        box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
     }
     
-    .weather-main-temp {
-        font-size: 64px;
-        font-weight: 800;
-        line-height: 1;
-        margin: 20px 0;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
-    
-    .weather-description {
-        font-size: 24px;
-        margin-bottom: 10px;
+    .weather-city-name {
+        font-size: 16px;
         opacity: 0.95;
+        margin-bottom: 12px;
     }
     
-    .weather-city {
-        font-size: 18px;
-        opacity: 0.9;
-        margin-bottom: 20px;
-    }
-    
-    .weather-detail-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 20px;
-        margin-top: 25px;
-        padding-top: 25px;
-        border-top: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    
-    .weather-detail-item {
-        background: rgba(255, 255, 255, 0.15);
-        padding: 15px;
-        border-radius: 12px;
-        backdrop-filter: blur(10px);
+    .weather-main-display {
         text-align: center;
+        margin: 16px 0;
     }
     
-    .weather-detail-label {
-        font-size: 13px;
-        opacity: 0.8;
-        margin-bottom: 5px;
-    }
-    
-    .weather-detail-value {
-        font-size: 22px;
-        font-weight: 700;
-    }
-    
-    .weather-advice {
-        background: rgba(255, 255, 255, 0.2);
-        padding: 15px 20px;
-        border-radius: 12px;
-        margin-top: 20px;
-        font-size: 14px;
-        backdrop-filter: blur(10px);
-    }
-    
-    .forecast-container {
-        background: white;
-        border-radius: 15px;
-        padding: 20px;
-        margin-top: 20px;
-        color: #1f2937;
-    }
-    
-    .forecast-title {
-        font-size: 18px;
-        font-weight: 700;
-        color: #667eea;
-        margin-bottom: 15px;
-    }
-    
-    .forecast-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
-    }
-    
-    .forecast-day {
-        background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        transition: all 0.3s;
-    }
-    
-    .forecast-day:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-    
-    .forecast-date {
-        font-size: 13px;
-        color: #6b7280;
-        margin-bottom: 8px;
-    }
-    
-    .forecast-icon {
-        font-size: 32px;
+    .weather-icon-large {
+        font-size: 72px;
         margin: 8px 0;
     }
     
-    .forecast-temp {
-        font-size: 16px;
-        font-weight: 700;
-        color: #667eea;
+    .weather-temp-large {
+        font-size: 56px;
+        font-weight: 800;
+        line-height: 1;
+        margin: 12px 0;
     }
     
-    .forecast-desc {
-        font-size: 12px;
-        color: #9ca3af;
-        margin-top: 5px;
+    .weather-desc-text {
+        font-size: 20px;
+        opacity: 0.95;
+    }
+    
+    .weather-details-container {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .weather-detail-box {
+        background: rgba(255, 255, 255, 0.15);
+        padding: 12px;
+        border-radius: 10px;
+        text-align: center;
+    }
+    
+    .weather-detail-title {
+        font-size: 13px;
+        opacity: 0.8;
+        margin-bottom: 4px;
+    }
+    
+    .weather-detail-content {
+        font-size: 20px;
+        font-weight: 700;
+    }
+    
+    .weather-advice-box {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 14px 18px;
+        border-radius: 10px;
+        margin-top: 16px;
+        font-size: 14px;
+        line-height: 1.6;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -169,101 +120,92 @@ def display_weather_enhanced(weather_data, city_name="城市"):
     humidity = weather_data.get('humidity', 60)
     wind_speed = weather_data.get('wind_speed', '3.0 m/s')
 
-    # 如果wind_speed不是字符串，转换为字符串
+    # 确保wind_speed是字符串
     if not isinstance(wind_speed, str):
         wind_speed = f"{wind_speed} m/s"
 
     icon = get_weather_emoji(desc)
 
-    # 生成天气建议
+    # 生成天气建议（简化版）
     if temp > 30:
-        advice = "🌡️ 天气炎热，请注意防暑降温，多喝水，避免长时间户外活动"
+        advice = "天气炎热，请注意防暑降温，多喝水，避免长时间户外活动"
     elif temp > 25:
-        advice = "☀️ 天气温暖舒适，适合外出游玩，建议做好防晒"
+        advice = "天气温暖舒适，适合外出游玩，建议做好防晒"
     elif temp > 15:
-        advice = "🌤️ 温度适宜，非常适合户外活动和旅行"
+        advice = "温度适宜，非常适合户外活动和旅行"
     elif temp > 10:
-        advice = "🧥 天气稍凉，建议携带外套以备不时之需"
+        advice = "天气稍凉，建议携带外套以备不时之需"
     elif temp > 0:
-        advice = "🧤 天气较冷，请注意保暖，建议穿着厚外套"
+        advice = "天气较冷，请注意保暖，建议穿着厚外套"
     else:
-        advice = "🥶 天气寒冷，请做好防寒措施，注意保暖"
+        advice = "天气寒冷，请做好防寒措施，注意保暖"
 
     # 根据天气添加额外建议
     if '雨' in desc:
-        advice += "。记得带伞！"
+        advice += "。记得带伞"
     elif '雪' in desc:
-        advice += "。路面可能湿滑，注意安全！"
+        advice += "。路面可能湿滑，注意安全"
     elif '风' in desc or float(wind_speed.split()[0]) > 5:
-        advice += "。风力较大，注意防风！"
+        advice += "。风力较大，注意防风"
 
-    # 渲染主天气卡片
+    # 使用Streamlit原生组件渲染，避免HTML问题
     st.markdown(f"""
-    <div class='weather-enhanced-card'>
-        <div class='weather-city'>📍 {city_name}</div>
-        <div style='text-align: center;'>
-            <div style='font-size: 80px;'>{icon}</div>
-            <div class='weather-main-temp'>{temp}°C</div>
-            <div class='weather-description'>{desc}</div>
-        </div>
-        
-        <div class='weather-detail-grid'>
-            <div class='weather-detail-item'>
-                <div class='weather-detail-label'>体感温度</div>
-                <div class='weather-detail-value'>{feels_like}°C</div>
-            </div>
-            <div class='weather-detail-item'>
-                <div class='weather-detail-label'>湿度</div>
-                <div class='weather-detail-value'>{humidity}%</div>
-            </div>
-            <div class='weather-detail-item'>
-                <div class='weather-detail-label'>风速</div>
-                <div class='weather-detail-value'>{wind_speed}</div>
-            </div>
-            <div class='weather-detail-item'>
-                <div class='weather-detail-label'>空气质量</div>
-                <div class='weather-detail-value'>良好</div>
-            </div>
-        </div>
-        
-        <div class='weather-advice'>
-            <strong>出行建议：</strong> {advice}
+    <div class='weather-card-fixed'>
+        <div class='weather-city-name'>{city_name}</div>
+        <div class='weather-main-display'>
+            <div class='weather-icon-large'>{icon}</div>
+            <div class='weather-temp-large'>{temp}°C</div>
+            <div class='weather-desc-text'>{desc}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 未来天气预报
+    # 使用Streamlit原生组件显示详细信息
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("体感温度", f"{feels_like}°C")
+
+    with col2:
+        st.metric("湿度", f"{humidity}%")
+
+    with col3:
+        st.metric("风速", wind_speed)
+
+    with col4:
+        st.metric("空气质量", "良好")
+
+    # 出行建议
+    st.info(f"**出行建议：** {advice}")
+
+    # 未来天气预报 - 使用简化版本
+    st.markdown("### 未来4天预报")
+
     forecast_data = get_mock_forecast_data(4)
 
-    st.markdown("""
-    <div class='forecast-container'>
-        <div class='forecast-title'>📅 未来4天预报</div>
-        <div class='forecast-grid'>
-    """, unsafe_allow_html=True)
-
-    for day in forecast_data:
-        date_str = day['date']
-        temp_high = day['temp_high']
-        temp_low = day['temp_low']
-        day_desc = day['description']
-        day_icon = get_weather_emoji(day_desc)
-
-        st.markdown(f"""
-        <div class='forecast-day'>
-            <div class='forecast-date'>{date_str}</div>
-            <div class='forecast-icon'>{day_icon}</div>
-            <div class='forecast-temp'>{temp_high}° / {temp_low}°</div>
-            <div class='forecast-desc'>{day_desc}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("</div></div>", unsafe_allow_html=True)
+    cols = st.columns(4)
+    for idx, (col, day) in enumerate(zip(cols, forecast_data)):
+        with col:
+            day_icon = get_weather_emoji(day['description'])
+            st.markdown(f"""
+            <div style='text-align: center; padding: 12px; background: #f3f4f6; 
+                        border-radius: 10px; border: 1px solid #e5e7eb;'>
+                <div style='font-size: 12px; color: #6b7280; margin-bottom: 6px;'>
+                    {day['date']}
+                </div>
+                <div style='font-size: 36px; margin: 8px 0;'>{day_icon}</div>
+                <div style='font-size: 15px; font-weight: 600; color: #10b981;'>
+                    {day['temp_high']}° / {day['temp_low']}°
+                </div>
+                <div style='font-size: 11px; color: #9ca3af; margin-top: 4px;'>
+                    {day['description']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def get_mock_forecast_data(days=4):
     """获取模拟预报数据"""
-    import random
-
     forecast = []
     weather_options = ["晴", "多云", "阴", "小雨", "晴转多云"]
 
@@ -277,7 +219,6 @@ def get_mock_forecast_data(days=4):
             "temp_high": random.randint(20, 30),
             "temp_low": random.randint(15, 22),
             "description": random.choice(weather_options),
-            "icon": random.choice(["clear", "cloudy", "partly_cloudy", "rainy"])
         })
 
     return forecast
@@ -285,9 +226,9 @@ def get_mock_forecast_data(days=4):
 
 # 测试代码
 if __name__ == "__main__":
-    st.set_page_config(page_title="增强版天气组件", layout="wide")
+    st.set_page_config(page_title="修复版天气组件", layout="wide")
 
-    st.title("增强版天气组件测试")
+    st.title("修复版天气组件测试")
 
     test_weather = {
         'temperature': 22,
