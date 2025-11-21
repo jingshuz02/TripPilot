@@ -4,7 +4,7 @@ import streamlit as st
 class APIClient:
     def __init__(self, base_url="http://localhost:5000"):
         """
-        初始化客户端
+        initialize the 客户端
         :param base_url: 后端 API 地址
         """
         self.base_url = base_url
