@@ -1,32 +1,48 @@
 """
-TripPilot Chat Interface - 统一预算管理版
+TripPilot Chat Interface - 改进版
 新功能：
 1. 💰 统一预算管理(不是每个类型单独预算)
 2. 📊 实时显示剩余预算
-3. 🎨 使用新Logo
-4. ✅ 预订成功弹窗显示扣除金额
+3. 🔄 优化刷新逻辑,避免需要点击两次
+4. 📱 自适应布局(侧边栏收起时)
+5. 🎯 智能预算分配建议
 """
 
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
 import json
+import sys
+import os
+
+# ✅ 修复路径：添加 frontend 目录到路径
+current_dir = os.path.dirname(__file__)  # frontend/pages/
+frontend_dir = os.path.abspath(os.path.join(current_dir, '..'))  # frontend/
+sys.path.insert(0, frontend_dir)
 
 # ==================== Import Custom Components ====================
 try:
     from components.hotel_card import display_hotel_card_v2, display_hotel_list_v2
-except ImportError:
+    print("✅ 成功导入 hotel_card_v2 组件（带日期选择器）")
+except ImportError as e:  # ✅ 添加 as e
+    print(f"❌ 导入hotel组件失败: {e}")
     display_hotel_list_v2 = None
     display_hotel_card_v2 = None
 
 try:
     from components.weather_widget import display_weather_enhanced
-except ImportError:
+
+    print("✅ 成功导入 天气组件（带日期选择器）")
+except ImportError as e:  # ✅ 添加 as e
+    print(f"❌ 导入天气组件失败: {e}")
     display_weather_enhanced = None
 
 try:
     from components.flight_card import display_flight_card_v2, display_flight_list_v2
-except ImportError:
+
+    print("✅ 成功导入 机票组件（带日期选择器）")
+except ImportError as e:  # ✅ 添加 as e
+    print(f"❌ 导入机票组件失败: {e}")
     display_flight_card_v2 = None
     display_flight_list_v2 = None
 
@@ -133,6 +149,10 @@ def create_new_conversation():
             "end_date": None
         }
     }
+    # ✅ 重置预算
+    st.session_state.total_spent = 0
+    st.session_state.orders = []
+
     switch_conversation(new_conv_id)
     return new_conv_id
 
@@ -208,6 +228,48 @@ def get_remaining_budget():
     return 0
 
 
+# ✅ 获取预算建议
+def get_budget_recommendations():
+    """
+    根据行程天数和剩余预算,给出合理的预算分配建议
+    """
+    current_conv = get_current_conversation()
+    if not current_conv:
+        return None
+
+    total_budget = current_conv["preferences"].get("budget", 5000)
+    days = current_conv["preferences"].get("days", 3)
+    remaining = get_remaining_budget()
+
+    # 如果已经花费超过一半,给出警告
+    if remaining < total_budget * 0.5:
+        percent_used = ((total_budget - remaining) / total_budget) * 100
+        return {
+            "status": "warning",
+            "message": f"⚠️ 已使用{percent_used:.0f}%预算,请注意控制开支"
+        }
+
+    # 建议预算分配(假设还没预订)
+    if st.session_state.total_spent < 100:
+        # 建议: 交通40%, 住宿30%, 其他30%
+        suggested_flight = int(remaining * 0.4)
+        suggested_hotel_total = int(remaining * 0.3)
+        suggested_hotel_per_night = int(suggested_hotel_total / max(days - 1, 1))
+        suggested_other = int(remaining * 0.3)
+
+        return {
+            "status": "info",
+            "message": f"💡 建议预算分配",
+            "details": {
+                "flight": f"交通: ¥{suggested_flight:,} (40%)",
+                "hotel": f"住宿: ¥{suggested_hotel_per_night:,}/晚",
+                "other": f"餐饮娱乐: ¥{suggested_other:,}"
+            }
+        }
+
+    return None
+
+
 init_session_state()
 
 # ==================== Style Definition - Light Green Theme ====================
@@ -257,25 +319,45 @@ st.markdown("""
     .ai-message ul { margin: 0.5rem 0; padding-left: 1.5rem; }
     .ai-message li { margin: 0.3rem 0; line-height: 1.6; }
     
-    /* Sidebar - Light Green, 1.5x Width */
+    /* ✅ 改进侧边栏样式 - 支持自适应 */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #6ee7b7 0%, #a7f3d0 100%);
-        min-width: 350px !important;
-        max-width: 500px !important;
+        transition: all 0.3s ease;
     }
     
+    /* 侧边栏展开状态 */
     [data-testid="stSidebar"][aria-expanded="true"] {
         min-width: 350px !important;
         max-width: 500px !important;
     }
     
-    [data-testid="stSidebar"] > div:first-child {
+    [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
         width: 350px !important;
     }
     
-    /* Adjust Main Content Area Left Margin */
+    /* 侧边栏收起状态 */
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        min-width: 0 !important;
+        max-width: 0 !important;
+    }
+    
+    /* ✅ 主内容区域自适应 */
     .main .block-container {
         padding-left: 1rem;
+        padding-right: 1rem;
+        max-width: 100%;
+        transition: all 0.3s ease;
+    }
+    
+    /* 侧边栏展开时主内容区域 */
+    [data-testid="stSidebar"][aria-expanded="true"] ~ .main .block-container {
+        margin-left: 0;
+    }
+    
+    /* 侧边栏收起时主内容区域自动扩展 */
+    [data-testid="stSidebar"][aria-expanded="false"] ~ .main .block-container {
+        margin-left: 0;
+        max-width: 100%;
     }
     
     /* Sidebar Text Color for Better Readability */
@@ -433,7 +515,9 @@ def call_backend_api(message: str) -> dict:
                 "destination": trip.get("destination", ""),
                 "days": max(1, trip.get("days", 3)),
                 "start_date": str(trip.get("start_date", datetime.now().date())),
-                "end_date": str(trip.get("end_date", ""))
+                "end_date": str(trip.get("end_date", "")),
+                # ✅ 添加剩余预算信息
+                "remaining_budget": get_remaining_budget()
             },
             "conversation_history": st.session_state.messages[-10:] if st.session_state.messages else []
         }
@@ -560,8 +644,12 @@ def _display_hotels_fallback(hotels: list, msg_idx: int):
 def display_flights(flights: list, msg_idx: int):
     """Display flight list with unified budget"""
     if display_flight_list_v2:
-        # ✅ 传递消息ID
-        display_flight_list_v2(flights, message_id=msg_idx)
+        # ✅ 传递消息ID和预订回调
+        display_flight_list_v2(
+            flights,
+            message_id=msg_idx,
+            on_book_callback=lambda flight, price: handle_booking("flight", flight, price)
+        )
     else:
         _display_flights_fallback(flights, msg_idx)
 
@@ -599,28 +687,44 @@ def _display_flights_fallback(flights: list, msg_idx: int):
 
 
 def display_weather(weather: dict):
-    """Display weather information"""
-    if display_weather_enhanced:
-        formatted_weather = {
-            "location": weather.get("location", weather.get("city", "")),
-            "temperature": weather.get("temperature", 0),
-            "feels_like": weather.get("feels_like", 0),
-            "weather": weather.get("weather", ""),
-            "description": weather.get("description", ""),
-            "humidity": weather.get("humidity", 0),
-            "wind_speed": weather.get("wind_speed", ""),
-            "wind_direction": weather.get("wind_direction", ""),
-            "visibility": weather.get("visibility", ""),
-            "pressure": weather.get("pressure", ""),
-            "uv_index": weather.get("uv_index", 0),
-            "sunrise": weather.get("sunrise", ""),
-            "sunset": weather.get("sunset", ""),
-            "update_time": weather.get("update_time", ""),
-            "forecast": weather.get("forecast", [])
-        }
-        display_weather_enhanced(formatted_weather)
+    """Display weather information - 修复版"""
+
+    # 1. 安全提取数据 (解决之前的 AttributeError 问题)
+    # 如果 weather 里面还有一层 "weather" 字典，则剥离出来
+    if isinstance(weather.get("weather"), dict):
+        weather_data = weather["weather"]
     else:
-        _display_weather_fallback(weather)
+        weather_data = weather
+
+    # 2. 检查是否成功导入了增强组件
+    if display_weather_enhanced:
+        # 格式化数据以匹配 weather_widget.py 的要求
+        formatted_weather = {
+            "location": weather_data.get("location", weather_data.get("city", "")),
+            "temperature": weather_data.get("temperature", 0),
+            "feels_like": weather_data.get("feels_like", 0),
+            # 确保 weather 是字符串描述，不是字典
+            "weather": weather_data.get("weather") if isinstance(weather_data.get("weather"),
+                                                                 str) else weather_data.get("description", ""),
+            "description": weather_data.get("description", ""),
+            "humidity": weather_data.get("humidity", 0),
+            "wind_speed": weather_data.get("wind_speed", ""),
+            "wind_direction": weather_data.get("wind_direction", ""),
+            "visibility": weather_data.get("visibility", ""),
+            "uv_index": weather_data.get("uv_index", 0),
+            "sunrise": weather_data.get("sunrise", ""),
+            "sunset": weather_data.get("sunset", ""),
+            # 关键：确保 forecast 列表被正确传递
+            "forecast": weather_data.get("forecast", [])
+        }
+
+        # 调用增强组件 (会显示绿色卡片和未来天气)
+        display_weather_enhanced(formatted_weather)
+
+    else:
+        # 如果导入失败，才会显示你截图中的简单样式
+        st.warning("Weather component not found, using fallback display.")
+        _display_weather_fallback(weather_data)
 
 
 def _display_weather_fallback(weather: dict):
@@ -650,18 +754,16 @@ def display_suggestions(suggestions: list, msg_idx: int = 0):
             button_key = f"sug_{msg_idx}_{idx}_{suggestion[:20]}"
             if st.button(f"{suggestion}", key=button_key):
                 st.session_state.pending_message = suggestion
+                st.rerun()
 
 
-# ✅ 统一的预订处理函数
+# ✅ 改进的统一预订处理函数
 def handle_booking(order_type: str, item: dict, price: float):
     """
     统一的预订处理函数 - 检查预算并扣除
-
-    Args:
-        order_type: 订单类型 (hotel/flight)
-        item: 订单项目数据
-        price: 价格
     """
+    import time
+
     remaining = get_remaining_budget()
 
     # 检查预算是否足够
@@ -682,18 +784,37 @@ def handle_booking(order_type: str, item: dict, price: float):
     st.session_state.total_spent += price
     new_remaining = get_remaining_budget()
 
-    # ✅ 显示成功消息和弹窗
-    success_msg = f"""
-    ✅ **预订成功!**
-    
-    - 类型: {'🏨 酒店' if order_type == 'hotel' else '✈️ 航班'}
-    - 项目: {item.get('name', item.get('carrier_name', 'Unknown'))}
-    - 扣除金额: ¥{price:,.0f}
-    - 剩余预算: ¥{new_remaining:,.0f}
-    """
+    # ✅ 构建成功消息
+    item_name = item.get('name', item.get('carrier_name', 'Unknown'))
+
+    # 特殊处理酒店多晚预订
+    if order_type == 'hotel' and 'nights' in item:
+        nights = item['nights']
+        price_per_night = item.get('price', 0)
+        success_msg = f"""
+        ✅ **预订成功!**
+
+        - 类型: 🏨 酒店
+        - 名称: {item_name}
+        - 晚数: {nights}晚 @ ¥{price_per_night:,}/晚
+        - 扣除金额: ¥{price:,.0f}
+        - 剩余预算: ¥{new_remaining:,.0f}
+        """
+    else:
+        success_msg = f"""
+        ✅ **预订成功!**
+
+        - 类型: {'🏨 酒店' if order_type == 'hotel' else '✈️ 航班'}
+        - 项目: {item_name}
+        - 扣除金额: ¥{price:,.0f}
+        - 剩余预算: ¥{new_remaining:,.0f}
+        """
 
     st.success(success_msg)
     st.balloons()
+
+    # ✅ 设置一个标志，让气球播放完
+    st.session_state.booking_success = True
 
     # 预算警告
     if new_remaining < 0:
@@ -701,9 +822,11 @@ def handle_booking(order_type: str, item: dict, price: float):
     elif new_remaining < 500:
         st.warning(f"⚠️ 预算即将用完,剩余 ¥{new_remaining:,.0f}")
 
+    # ✅ 延迟后刷新
+    time.sleep(2)  # 等待气球动画
+    st.rerun()
+
     return True
-
-
 # ==================== Main Function ====================
 def handle_user_input(message: str):
     """Handle user input"""
@@ -802,6 +925,15 @@ with st.sidebar:
             """, unsafe_allow_html=True)
 
         st.caption(f"已花费: ¥{st.session_state.total_spent:,.0f} | 订单数: {len(st.session_state.orders)}")
+
+        # ✅ 显示预算建议
+        budget_rec = get_budget_recommendations()
+        if budget_rec:
+            with st.expander("💡 预算建议", expanded=False):
+                st.markdown(f"**{budget_rec['message']}**")
+                if 'details' in budget_rec:
+                    for key, value in budget_rec['details'].items():
+                        st.caption(value)
 
     st.divider()
 
@@ -936,6 +1068,9 @@ with st.sidebar:
             if current_conv:
                 current_conv["messages"] = []
                 st.session_state.messages = []
+                # ✅ 清空时重置预算
+                st.session_state.total_spent = 0
+                st.session_state.orders = []
                 st.success("Cleared")
                 st.rerun()
 
@@ -954,12 +1089,20 @@ with st.sidebar:
                 name = item.get('name', item.get('carrier_name', 'Unknown'))
                 price = order.get('price', 0)
 
-                st.write(f"**{idx}. {name}**")
+                # 显示订单详情
+                if order_type == 'hotel' and 'nights' in item:
+                    nights = item['nights']
+                    st.write(f"**{idx}. {name}** ({nights}晚)")
+                else:
+                    st.write(f"**{idx}. {name}**")
+
                 st.caption(f"Type: {order_type} | Price: ¥{price:,.0f}")
+
                 if st.button("Delete", key=f"del_order_{idx}"):
                     st.session_state.total_spent -= price
                     st.session_state.orders.pop(idx-1)
                     st.rerun()
+
                 if idx < len(st.session_state.orders):
                     st.divider()
 
@@ -1062,6 +1205,7 @@ if not st.session_state.messages:
         with cols[idx % 2]:
             if st.button(f"{query}", key=f"example_query_{idx}", use_container_width=True):
                 st.session_state.pending_message = query
+                st.rerun()
 
     st.divider()
 
@@ -1097,7 +1241,7 @@ with st.container():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.caption("✈️ TripPilot v2.1 - Your Intelligent Travel Partner")
+        st.caption("✈️ TripPilot v2.2 - Your Intelligent Travel Partner")
 
     with col2:
         if st.session_state.messages:

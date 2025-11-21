@@ -1,347 +1,430 @@
 """
-修复版订单页面
-修复内容：
-1. 初始化session_state，避免AttributeError
-2. 添加预算实时计算
-3. 优化订单展示
+完善版订单管理页面
+功能：
+1. ✅ 显示当前对话的所有订单
+2. ✅ 支持查看订单详情
+3. ✅ 支持删除订单并退款
+4. ✅ 实时预算统计
+5. ✅ 订单导出功能
 """
 
 import streamlit as st
 from datetime import datetime
 from uuid import uuid4
-
-# ==================== 初始化Session State ====================
-
-def init_session_state():
-    """初始化所有必要的session state"""
-    if "trips" not in st.session_state:
-        st.session_state.trips = [{
-            "name": "我的旅行计划",
-            "desc": "自动创建的默认行程",
-            "id": str(uuid4())[:8],
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "destination": "",
-            "start_date": "",
-            "end_date": ""
-        }]
-
-    if "orders" not in st.session_state:
-        st.session_state.orders = []
-
-    if "budget" not in st.session_state:
-        st.session_state.budget = 5000
-
-    if "current_payment" not in st.session_state:
-        st.session_state.current_payment = None
-
-# 调用初始化
-init_session_state()
+import json
 
 # ==================== 页面配置 ====================
+st.set_page_config(
+    page_title="订单管理 | TripPilot",
+    page_icon="📋",
+    layout="wide"
+)
 
-st.title("📋 我的订单")
-st.caption("查看和管理您的旅行订单")
+# ==================== 初始化 Session State ====================
+def init_session_state():
+    """初始化所有必要的session state"""
+    if "conversations" not in st.session_state:
+        default_conv_id = str(uuid4())[:8]
+        st.session_state.conversations = {
+            default_conv_id: {
+                "id": default_conv_id,
+                "name": "新对话",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "messages": [],
+                "preferences": {
+                    "destination": "",
+                    "days": 3,
+                    "budget": 5000,
+                    "start_date": datetime.now().date(),
+                    "end_date": None
+                },
+                "orders": [],
+                "total_spent": 0
+            }
+        }
+        st.session_state.current_conversation_id = default_conv_id
 
-# ==================== 订单统计 ====================
+    if "current_conversation_id" not in st.session_state:
+        st.session_state.current_conversation_id = list(st.session_state.conversations.keys())[0]
 
-# 计算总花费
-total_spent = sum(o['price'] for o in st.session_state.orders)
-remaining = st.session_state.budget - total_spent
+init_session_state()
 
-# 顶部统计卡片
+# ==================== 辅助函数 ====================
+def get_current_conversation():
+    """获取当前对话"""
+    conv_id = st.session_state.current_conversation_id
+    return st.session_state.conversations.get(conv_id)
+
+
+def delete_order(order_id: str):
+    """删除订单并退款"""
+    current_conv = get_current_conversation()
+    if not current_conv:
+        return False
+
+    orders = current_conv.get("orders", [])
+    for order in orders:
+        if order["id"] == order_id:
+            # 退款
+            refund_amount = order["price"]
+            current_conv["total_spent"] = current_conv.get("total_spent", 0) - refund_amount
+
+            # 删除订单
+            orders.remove(order)
+            current_conv["orders"] = orders
+
+            st.success(f"✅ 订单已删除，已退款 ¥{refund_amount:,.0f}")
+            return True
+
+    return False
+
+
+def export_orders_to_json():
+    """导出订单为JSON"""
+    current_conv = get_current_conversation()
+    if not current_conv:
+        return None
+
+    orders = current_conv.get("orders", [])
+    export_data = {
+        "conversation_id": current_conv["id"],
+        "conversation_name": current_conv["name"],
+        "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_orders": len(orders),
+        "total_spent": current_conv.get("total_spent", 0),
+        "budget": current_conv["preferences"].get("budget", 5000),
+        "orders": orders
+    }
+
+    return json.dumps(export_data, ensure_ascii=False, indent=2)
+
+
+# ==================== 样式 ====================
+st.markdown("""
+<style>
+    .order-card {
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    
+    .order-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .order-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #111827;
+    }
+    
+    .order-price {
+        font-size: 24px;
+        font-weight: 700;
+        color: #10b981;
+    }
+    
+    .order-meta {
+        color: #6b7280;
+        font-size: 13px;
+        margin-top: 4px;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    
+    .status-paid {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    
+    .status-pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    .status-cancelled {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    
+    .summary-card {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .summary-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ==================== 主界面 ====================
+st.title("📋 订单管理")
+
+current_conv = get_current_conversation()
+
+if not current_conv:
+    st.error("❌ 未找到当前对话")
+    st.stop()
+
+# ==================== 顶部汇总卡片 ====================
+orders = current_conv.get("orders", [])
+total_spent = current_conv.get("total_spent", 0)
+total_budget = current_conv["preferences"].get("budget", 5000)
+remaining = total_budget - total_spent
+
+st.markdown(f"""
+<div class='summary-card'>
+    <h3 style='margin: 0 0 16px 0;'>💰 预算概览</h3>
+    <div class='summary-item'>
+        <span>总预算</span>
+        <span style='font-size: 20px; font-weight: 700;'>¥{total_budget:,.0f}</span>
+    </div>
+    <div class='summary-item'>
+        <span>已花费</span>
+        <span style='font-size: 20px; font-weight: 700;'>¥{total_spent:,.0f}</span>
+    </div>
+    <div class='summary-item' style='border-top: 1px solid rgba(255,255,255,0.3); padding-top: 12px;'>
+        <span>剩余预算</span>
+        <span style='font-size: 24px; font-weight: 700;'>¥{remaining:,.0f}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==================== 统计卡片 ====================
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric(
-        "订单总数",
-        len(st.session_state.orders),
-        delta=None
-    )
+    st.metric("📦 订单总数", len(orders))
 
 with col2:
-    flights = [o for o in st.session_state.orders if o['type'] == 'flight']
-    st.metric(
-        "✈️ 航班",
-        len(flights),
-        delta=None
-    )
+    hotel_orders = [o for o in orders if o.get("type") == "hotel"]
+    st.metric("🏨 酒店订单", len(hotel_orders))
 
 with col3:
-    hotels = [o for o in st.session_state.orders if o['type'] == 'hotel']
-    st.metric(
-        "🏨 酒店",
-        len(hotels),
-        delta=None
-    )
+    flight_orders = [o for o in orders if o.get("type") == "flight"]
+    st.metric("✈️ 航班订单", len(flight_orders))
 
 with col4:
-    # 显示剩余预算，根据正负显示不同颜色
-    st.metric(
-        "剩余预算",
-        f"¥{remaining:.2f}",
-        delta=f"-¥{total_spent:.2f}" if total_spent > 0 else None,
-        delta_color="inverse"
-    )
+    usage_percent = (total_spent / total_budget * 100) if total_budget > 0 else 0
+    st.metric("📊 预算使用率", f"{usage_percent:.1f}%")
 
-# 预算使用进度条
-if st.session_state.budget > 0:
-    budget_usage = min(total_spent / st.session_state.budget, 1.0)
-    st.progress(budget_usage)
-
-    # 预算状态提示
-    if remaining < 0:
-        st.error(f"⚠️ 预算超支 ¥{abs(remaining):.2f}")
-    elif remaining < st.session_state.budget * 0.2:
-        st.warning(f"⚠️ 预算即将用完，剩余 ¥{remaining:.2f}")
-    else:
-        st.success(f"✅ 预算充足，剩余 ¥{remaining:.2f}")
+# 预算进度条
+if total_budget > 0:
+    progress = min(total_spent / total_budget, 1.0)
+    st.progress(progress)
 
 st.divider()
 
-# ==================== 按行程展示订单 ====================
-
-if not st.session_state.trips:
-    st.warning("暂无行程，请先创建行程")
+# ==================== 订单列表 ====================
+if not orders:
+    st.info("📝 暂无订单")
+    st.markdown("""
+    ### 💡 提示
+    - 在聊天界面搜索酒店或航班
+    - 选择合适的选项并完成预订
+    - 订单将自动显示在此页面
+    """)
 else:
-    for trip in st.session_state.trips:
-        with st.expander(f"🗺️ {trip['name']}", expanded=True):
-            # 行程信息
-            col_info1, col_info2 = st.columns(2)
-            with col_info1:
-                st.caption(f"📅 创建时间: {trip['created_at']}")
-            with col_info2:
-                st.caption(f"🆔 行程ID: {trip['id']}")
+    st.subheader(f"📋 订单列表 ({len(orders)} 个)")
 
-            if trip.get('desc'):
-                st.write(trip['desc'])
+    # 排序选项
+    col_sort1, col_sort2 = st.columns([3, 1])
+    with col_sort2:
+        sort_by = st.selectbox(
+            "排序",
+            options=["时间倒序", "时间正序", "价格从高到低", "价格从低到高"],
+            label_visibility="collapsed"
+        )
 
-            st.divider()
+    # 排序
+    sorted_orders = orders.copy()
+    if sort_by == "时间倒序":
+        sorted_orders.reverse()
+    elif sort_by == "价格从高到低":
+        sorted_orders.sort(key=lambda x: x.get("price", 0), reverse=True)
+    elif sort_by == "价格从低到高":
+        sorted_orders.sort(key=lambda x: x.get("price", 0))
 
-            # 获取该行程的订单
-            trip_orders = [o for o in st.session_state.orders if o.get('trip_id') == trip['id']]
+    # 显示订单
+    for idx, order in enumerate(sorted_orders, 1):
+        order_type = order.get("type", "unknown")
+        item_name = order.get("item_name", "未知项目")
+        price = order.get("price", 0)
+        order_id = order.get("id", "N/A")
+        status = order.get("status", "未知")
+        created_at = order.get("created_at", "N/A")
+        item_details = order.get("item_details", {})
 
-            if not trip_orders:
-                st.info("📝 该行程暂无订单")
-            else:
-                st.markdown(f"**📝 订单列表** ({len(trip_orders)} 个)")
+        # 订单图标
+        icon = "🏨" if order_type == "hotel" else "✈️" if order_type == "flight" else "📦"
 
-                # 显示订单
-                for order in trip_orders:
-                    with st.container(border=True):
-                        col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
+        # 状态徽章
+        status_class = "status-paid" if status == "已支付" else "status-pending" if status == "待支付" else "status-cancelled"
 
-                        with col1:
-                            # 订单类型图标
-                            icon = "✈️" if order['type'] == 'flight' else "🏨"
+        with st.container():
+            st.markdown(f"""
+            <div class='order-card'>
+                <div class='order-header'>
+                    <div>
+                        <div class='order-title'>{icon} {item_name}</div>
+                        <div class='order-meta'>订单号: {order_id} | 创建时间: {created_at}</div>
+                    </div>
+                    <div style='text-align: right;'>
+                        <div class='order-price'>¥{price:,.0f}</div>
+                        <span class='status-badge {status_class}'>{status}</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
-                            # 订单名称
-                            st.markdown(f"**{icon} {order['item']}**")
+            # 订单详情展开
+            with st.expander("📄 查看详情"):
+                if order_type == "hotel":
+                    col_d1, col_d2 = st.columns(2)
 
-                            # 订单ID和时间
-                            st.caption(f"订单号: {order['id']}")
-                            st.caption(f"创建时间: {order['time']}")
+                    with col_d1:
+                        st.write(f"**酒店名称**: {item_details.get('name', 'N/A')}")
+                        st.write(f"**位置**: {item_details.get('location', 'N/A')}")
+                        st.write(f"**评分**: {item_details.get('rating', 'N/A')}/5.0")
 
-                        with col2:
-                            # 价格
-                            st.metric("金额", f"¥{order['price']:.2f}")
+                        # 如果有入住信息
+                        if 'checkin_date' in item_details:
+                            checkin = item_details['checkin_date']
+                            checkout = item_details.get('checkout_date', 'N/A')
+                            nights = item_details.get('nights', 1)
+                            st.write(f"**入住日期**: {checkin}")
+                            st.write(f"**退房日期**: {checkout}")
+                            st.write(f"**入住晚数**: {nights}晚")
 
-                        with col3:
-                            # 状态
-                            status_map = {
-                                'Pending': ('⏳', 'Pending', 'orange'),
-                                'Confirmed': ('✅', 'Confirmed', 'green'),
-                                'Cancelled': ('❌', 'Cancelled', 'red')
-                            }
+                    with col_d2:
+                        price_per_night = item_details.get('price', 0)
+                        st.write(f"**价格/晚**: ¥{price_per_night:,.0f}")
+                        st.write(f"**地址**: {item_details.get('address', 'N/A')}")
 
-                            status = order.get('status', 'Pending')
-                            emoji, text, color = status_map.get(status, ('❓', status, 'gray'))
+                        # 设施
+                        amenities = item_details.get('amenities', [])
+                        if amenities:
+                            st.write(f"**设施**: {', '.join(amenities[:5])}")
 
-                            st.write(f"{emoji} {text}")
+                elif order_type == "flight":
+                    col_d1, col_d2 = st.columns(2)
 
-                            # 状态切换按钮
-                            if status == 'Pending':
-                                if st.button(
-                                        "确认订单",
-                                        key=f"confirm_{order['id']}",
-                                        use_container_width=True
-                                ):
-                                    order['status'] = 'Confirmed'
-                                    st.success("✅ 订单已确认！")
-                                    st.rerun()
+                    with col_d1:
+                        st.write(f"**航空公司**: {item_details.get('carrier_name', 'N/A')}")
+                        st.write(f"**航班号**: {item_details.get('flight_number', 'N/A')}")
+                        st.write(f"**出发**: {item_details.get('origin', 'N/A')}")
+                        st.write(f"**到达**: {item_details.get('destination', 'N/A')}")
 
-                        with col4:
-                            # 删除按钮
-                            if st.button(
-                                    "🗑️",
-                                    key=f"delete_{order['id']}",
-                                    help="删除订单",
-                                    use_container_width=True
-                            ):
-                                st.session_state.orders.remove(order)
-                                st.success("✅ 订单已删除")
-                                st.rerun()
+                    with col_d2:
+                        st.write(f"**起飞时间**: {item_details.get('departure_time', 'N/A')}")
+                        st.write(f"**到达时间**: {item_details.get('arrival_time', 'N/A')}")
+                        st.write(f"**飞行时长**: {item_details.get('duration', 'N/A')}")
+                        cabin = item_details.get('cabin_class', 'N/A')
+                        st.write(f"**舱位**: {cabin}")
 
-                        # 详情展开
-                        with st.expander("查看详细信息"):
-                            details = order.get('details', {})
+            # 操作按钮
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
 
-                            if order['type'] == 'flight':
-                                col_d1, col_d2 = st.columns(2)
+            with col_btn1:
+                if st.button("🗑️ 删除", key=f"del_{order_id}", use_container_width=True):
+                    if delete_order(order_id):
+                        st.rerun()
 
-                                with col_d1:
-                                    st.write(f"**起飞**: {details.get('departure_time', details.get('departure', 'N/A'))}")
-                                    st.write(f"**到达**: {details.get('arrival_time', details.get('arrival', 'N/A'))}")
-                                    st.write(f"**舱位**: {details.get('cabin_class', 'N/A')}")
+            with col_btn2:
+                if st.button("📧 发送邮件", key=f"email_{order_id}", use_container_width=True):
+                    st.info(f"✉️ 订单确认邮件已发送到您的邮箱")
 
-                                with col_d2:
-                                    st.write(f"**航空公司**: {details.get('operating_carrier', details.get('carrier_code', 'N/A'))}")
-                                    st.write(f"**航班号**: {details.get('flight_number', 'N/A')}")
-                                    st.write(f"**飞行时长**: {details.get('duration', 'N/A')}")
-
-                            elif order['type'] == 'hotel':
-                                col_d1, col_d2 = st.columns(2)
-
-                                with col_d1:
-                                    st.write(f"**酒店**: {details.get('name', 'N/A')}")
-                                    st.write(f"**位置**: {details.get('location', 'N/A')}")
-                                    st.write(f"**评分**: {details.get('rating', 'N/A')}/5.0")
-
-                                with col_d2:
-                                    st.write(f"**价格/晚**: ¥{details.get('price', 0):.2f}")
-                                    desc = details.get('desc', '')
-                                    if desc:
-                                        st.write(f"**描述**: {desc[:100]}...")
-
-                                    # 显示设施
-                                    amenities = details.get('amenities', [])
-                                    if amenities:
-                                        st.write(f"**设施**: {', '.join(amenities[:3])}")
-
-                # 该行程小计
-                trip_total = sum(o['price'] for o in trip_orders)
-                st.divider()
-                st.markdown(f"**该行程总计**: ¥{trip_total:.2f}")
-
-                # 清空该行程订单按钮
-                if st.button(
-                        "🗑️ 清空该行程的所有订单",
-                        key=f"clear_trip_{trip['id']}",
-                        type="secondary"
-                ):
-                    st.session_state.orders = [
-                        o for o in st.session_state.orders
-                        if o.get('trip_id') != trip['id']
-                    ]
-                    st.success("✅ 已清空该行程的订单")
-                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
 
-# ==================== 全局操作 ====================
+# ==================== 底部操作区 ====================
+st.subheader("🛠️ 批量操作")
 
-st.markdown("### 🛠️ 订单管理")
+col_op1, col_op2, col_op3, col_op4 = st.columns(4)
 
-col_btn1, col_btn2, col_btn3 = st.columns(3)
-
-with col_btn1:
-    if st.button("🔄 刷新订单", use_container_width=True):
+with col_op1:
+    if st.button("🔄 刷新页面", use_container_width=True):
         st.rerun()
 
-with col_btn2:
-    # 导出订单为JSON
-    if st.button("📊 导出订单数据", use_container_width=True):
-        if st.session_state.orders:
-            import json
-            orders_json = json.dumps(st.session_state.orders, ensure_ascii=False, indent=2)
+with col_op2:
+    if orders:
+        json_data = export_orders_to_json()
+        if json_data:
             st.download_button(
-                label="下载订单JSON",
-                data=orders_json,
-                file_name=f"orders_{datetime.now().strftime('%Y%m%d')}.json",
-                mime="application/json"
+                label="📊 导出订单",
+                data=json_data,
+                file_name=f"orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True
             )
-        else:
-            st.info("暂无订单可导出")
 
-with col_btn3:
-    if st.button("🗑️ 清空所有订单", use_container_width=True, type="secondary"):
-        if st.session_state.orders:
-            if st.checkbox("确认清空所有订单", key="confirm_clear_all"):
-                st.session_state.orders = []
-                st.success("✅ 所有订单已清空")
-                st.rerun()
-        else:
-            st.info("暂无订单可清空")
-
-# ==================== 侧边栏预算管理 ====================
-
-with st.sidebar:
-    st.header("💰 预算管理")
-
-    # 预算使用进度
-    if st.session_state.budget > 0:
-        progress = min(total_spent / st.session_state.budget, 1.0)
-        st.progress(progress)
-
-        # 进度百分比
-        usage_percent = (total_spent / st.session_state.budget) * 100
-        st.caption(f"已使用 {usage_percent:.1f}%")
-
-    st.metric(
-        "剩余预算",
-        f"¥{remaining:.2f}",
-        delta=f"已用: ¥{total_spent:.2f}",
-        delta_color="inverse"
-    )
-
-    st.divider()
-
-    # 预算设置
-    st.markdown("### 📝 预算设置")
-
-    new_budget = st.number_input(
-        "更新预算 (¥)",
-        min_value=0,
-        value=st.session_state.budget,
-        step=100,
-        key="budget_update"
-    )
-
-    if st.button("💾 保存预算", use_container_width=True, type="primary"):
-        st.session_state.budget = new_budget
-        st.success("✅ 预算已更新！")
-        st.rerun()
-
-    st.divider()
-
-    # 快速统计
-    st.markdown("### 📊 快速统计")
-
-    if st.session_state.orders:
-        # 按类型统计
-        flight_cost = sum(o['price'] for o in st.session_state.orders if o['type'] == 'flight')
-        hotel_cost = sum(o['price'] for o in st.session_state.orders if o['type'] == 'hotel')
-
-        st.write(f"✈️ 航班费用: ¥{flight_cost:.2f}")
-        st.write(f"🏨 酒店费用: ¥{hotel_cost:.2f}")
-
-        # 按状态统计
-        pending = len([o for o in st.session_state.orders if o.get('status') == 'Pending'])
-        confirmed = len([o for o in st.session_state.orders if o.get('status') == 'Confirmed'])
-
-        st.write(f"⏳ 待确认: {pending} 个")
-        st.write(f"✅ 已确认: {confirmed} 个")
-
-    st.divider()
-
-    # 快速导航
-    st.markdown("### 🧭 快速导航")
+with col_op3:
     if st.button("💬 返回聊天", use_container_width=True):
         st.switch_page("pages/chat.py")
 
-    if st.button("🏠 返回首页", use_container_width=True):
-        st.switch_page("frontend/streamlit_app.py")
+with col_op4:
+    if orders:
+        if st.button("🗑️ 清空所有订单", use_container_width=True, type="secondary"):
+            if st.checkbox("⚠️ 确认清空所有订单（不可恢复）", key="confirm_clear"):
+                current_conv["orders"] = []
+                current_conv["total_spent"] = 0
+                st.success("✅ 所有订单已清空")
+                st.rerun()
 
-# ==================== 底部说明 ====================
+# ==================== 侧边栏 ====================
+with st.sidebar:
+    st.header("📊 统计信息")
 
+    if orders:
+        # 按类型统计
+        hotel_total = sum(o["price"] for o in orders if o.get("type") == "hotel")
+        flight_total = sum(o["price"] for o in orders if o.get("type") == "flight")
+
+        st.markdown("### 💰 费用统计")
+        st.write(f"🏨 酒店: ¥{hotel_total:,.0f}")
+        st.write(f"✈️ 航班: ¥{flight_total:,.0f}")
+        st.write(f"📊 总计: ¥{total_spent:,.0f}")
+
+        st.divider()
+
+        # 按状态统计
+        st.markdown("### 📋 订单状态")
+        paid = len([o for o in orders if o.get("status") == "已支付"])
+        pending = len([o for o in orders if o.get("status") == "待支付"])
+
+        st.write(f"✅ 已支付: {paid} 个")
+        st.write(f"⏳ 待支付: {pending} 个")
+
+    st.divider()
+
+    # 对话信息
+    st.markdown("### 💬 当前对话")
+    st.write(f"**名称**: {current_conv['name']}")
+    st.write(f"**目的地**: {current_conv['preferences'].get('destination', '未设置')}")
+    st.write(f"**天数**: {current_conv['preferences'].get('days', 0)} 天")
+    st.write(f"**消息数**: {len(current_conv.get('messages', []))} 条")
+
+# ==================== 底部提示 ====================
 st.markdown("---")
-st.caption("💡 提示：订单数据保存在当前会话中，关闭浏览器后将丢失")
+st.caption("💡 提示：订单数据保存在当前会话中，切换对话或关闭浏览器后将丢失")

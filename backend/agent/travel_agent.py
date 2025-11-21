@@ -1,6 +1,10 @@
 """
-TripPilot Travel Agent - 修复版
-核心改进：让DeepSeek直接返回结构化JSON数据
+TripPilot Travel Agent - 改进版
+新功能：
+1. 🎯 智能预算分配
+2. 💰 价格合理性检查
+3. 📊 根据剩余预算动态调整推荐
+4. ✅ 确保推荐的价格不会耗尽所有预算
 """
 
 import json
@@ -52,6 +56,34 @@ class TravelAgent:
             print(f"✅ DeepSeek API已配置")
             print(f"   Key前缀: {self.api_key[:12]}...")
 
+    # ✅ 新增：计算合理的预算分配
+    def _calculate_budget_allocation(self, total_budget: float, remaining_budget: float, days: int) -> Dict[str, float]:
+        """
+        计算合理的预算分配
+
+        Args:
+            total_budget: 总预算
+            remaining_budget: 剩余预算
+            days: 旅行天数
+
+        Returns:
+            预算分配建议 (交通、住宿、其他)
+        """
+        # 如果剩余预算很少，返回保守建议
+        if remaining_budget < total_budget * 0.3:
+            return {
+                "flight_max": remaining_budget * 0.3,
+                "hotel_per_night_max": (remaining_budget * 0.4) / max(days - 1, 1),
+                "other": remaining_budget * 0.3
+            }
+
+        # 正常情况：40%交通，30%住宿，30%其他
+        return {
+            "flight_max": remaining_budget * 0.4,
+            "hotel_per_night_max": (remaining_budget * 0.3) / max(days - 1, 1),
+            "other": remaining_budget * 0.3
+        }
+
     def process_message(self, message: str, preferences: Dict = None) -> Dict:
         """处理用户消息"""
         print("=" * 60)
@@ -86,7 +118,10 @@ class TravelAgent:
             if preferences.get("destination"):
                 context_parts.append(f"目的地: {preferences['destination']}")
             if preferences.get("budget"):
-                context_parts.append(f"预算: ¥{preferences['budget']}")
+                context_parts.append(f"总预算: ¥{preferences['budget']}")
+            # ✅ 添加剩余预算信息
+            if preferences.get("remaining_budget") is not None:
+                context_parts.append(f"剩余预算: ¥{preferences['remaining_budget']}")
             if preferences.get("start_date") and preferences.get("end_date"):
                 context_parts.append(f"日期: {preferences['start_date']} 至 {preferences['end_date']}")
 
@@ -111,16 +146,39 @@ class TravelAgent:
         return "general"
 
     def _handle_hotel_search(self, context: str, preferences: Dict) -> Dict:
-        """处理酒店搜索 - 关键修复：要求DeepSeek返回JSON"""
+        """处理酒店搜索 - 带智能预算控制"""
 
-        # ✅ 修改prompt，明确要求返回JSON格式
+        # ✅ 获取预算信息
+        total_budget = preferences.get("budget", 5000) if preferences else 5000
+        remaining_budget = preferences.get("remaining_budget", total_budget) if preferences else total_budget
+        days = preferences.get("days", 3) if preferences else 3
+
+        # ✅ 计算合理的酒店价格范围
+        budget_allocation = self._calculate_budget_allocation(total_budget, remaining_budget, days)
+        max_hotel_price = int(budget_allocation["hotel_per_night_max"])
+
+        # 确保价格合理（最低100，最高不超过剩余预算的40%）
+        max_hotel_price = max(100, min(max_hotel_price, int(remaining_budget * 0.4)))
+
+        # ✅ 修改prompt，要求DeepSeek返回价格合理的酒店
         prompt = f"""
 你是专业的酒店推荐助手。用户需求：{context}
+
+🎯 重要预算信息：
+- 用户总预算：¥{total_budget}
+- 剩余预算：¥{remaining_budget}
+- 旅行天数：{days}天
+- 建议每晚酒店预算：¥{max_hotel_price}以内
+
+⚠️ 请注意：
+1. 推荐的酒店价格不能太高，要给用户留出足够的餐饮和娱乐预算
+2. 价格应该控制在 ¥100 - ¥{max_hotel_price}/晚
+3. 要推荐性价比高的选择，不是越贵越好
 
 请按以下格式返回，先用自然语言介绍，然后提供JSON数据：
 
 【文字介绍】
-（这里写推荐理由和说明）
+（这里写推荐理由和说明，说明为什么这些酒店性价比高）
 
 【JSON数据】
 ```json
@@ -132,7 +190,7 @@ class TravelAgent:
       "location": "位置",
       "address": "详细地址",
       "tel": "电话",
-      "price": 价格数字,
+      "price": 价格数字(控制在{max_hotel_price}以内),
       "rating": 评分数字,
       "amenities": ["设施1", "设施2"],
       "landmark": "地标说明",
@@ -144,9 +202,10 @@ class TravelAgent:
 
 要求：
 1. 推荐5个真实存在的酒店
-2. 价格要符合用户预算
-3. JSON格式必须严格遵守，不要有语法错误
-4. 每个字段都要填写完整
+2. 价格必须在¥100-¥{max_hotel_price}之间，考虑用户的剩余预算
+3. 优先推荐性价比高的中等价位酒店
+4. JSON格式必须严格遵守，不要有语法错误
+5. 每个字段都要填写完整
 """
 
         ai_response = self._call_deepseek_api(prompt)
@@ -158,7 +217,17 @@ class TravelAgent:
             hotels_data = self._extract_json_from_response(content, "hotels")
 
             if hotels_data:
-                print(f"✅ 成功提取到 {len(hotels_data)} 个酒店数据")
+                # ✅ 过滤价格过高的酒店
+                filtered_hotels = [
+                    hotel for hotel in hotels_data
+                    if 100 <= hotel.get('price', 0) <= max_hotel_price * 1.2  # 允许20%浮动
+                ]
+
+                # 如果过滤后没有酒店，使用原始数据但降低价格
+                if not filtered_hotels:
+                    filtered_hotels = self._adjust_hotel_prices(hotels_data, max_hotel_price)
+
+                print(f"✅ 成功提取到 {len(filtered_hotels)} 个酒店数据（已过滤价格）")
 
                 # ✅ 提取文字部分（JSON之前的内容）
                 text_part = content.split("```json")[0].strip()
@@ -166,8 +235,8 @@ class TravelAgent:
 
                 return {
                     "action": "search_hotels",
-                    "content": text_part,
-                    "data": hotels_data,
+                    "content": text_part + f"\n\n💡 **预算提示**: 建议每晚酒店预算为 ¥{max_hotel_price}，为您精选了性价比高的选择。",
+                    "data": filtered_hotels,
                     "suggestions": [
                         "查看更多酒店",
                         "调整价格范围",
@@ -176,26 +245,48 @@ class TravelAgent:
                 }
             else:
                 # ✅ 如果提取失败，返回文本但给出警告
-                print("⚠️ 未能提取JSON数据，仅返回文本")
+                print("⚠️ 未能提取JSON数据，使用fallback")
                 return {
                     "action": "search_hotels",
                     "content": content + "\n\n⚠️ 未能获取结构化数据，请尝试重新搜索",
-                    "data": self._generate_mock_hotels(preferences),  # fallback
+                    "data": self._generate_smart_mock_hotels(preferences, max_hotel_price),
                     "suggestions": ["重新搜索", "更改条件"]
                 }
         else:
             return self._generate_fallback_response("hotel", context, preferences)
 
     def _handle_flight_search(self, context: str, preferences: Dict) -> Dict:
-        """处理航班搜索 - 同样要求返回JSON"""
+        """处理航班搜索 - 带智能预算控制"""
+
+        # ✅ 获取预算信息
+        total_budget = preferences.get("budget", 5000) if preferences else 5000
+        remaining_budget = preferences.get("remaining_budget", total_budget) if preferences else total_budget
+        days = preferences.get("days", 3) if preferences else 3
+
+        # ✅ 计算合理的航班价格范围
+        budget_allocation = self._calculate_budget_allocation(total_budget, remaining_budget, days)
+        max_flight_price = int(budget_allocation["flight_max"])
+
+        # 确保价格合理（最低200，最高不超过剩余预算的50%）
+        max_flight_price = max(200, min(max_flight_price, int(remaining_budget * 0.5)))
 
         prompt = f"""
 你是专业的航班查询助手。用户需求：{context}
 
+🎯 重要预算信息：
+- 用户总预算：¥{total_budget}
+- 剩余预算：¥{remaining_budget}
+- 建议航班预算：¥{max_flight_price}以内
+
+⚠️ 请注意：
+1. 推荐的航班价格要合理，不能把预算全部花在机票上
+2. 价格应该控制在 ¥200 - ¥{max_flight_price}
+3. 优先推荐经济舱，商务舱和头等舱价格太高
+
 请按以下格式返回：
 
 【文字介绍】
-（这里写航班推荐说明）
+（这里写航班推荐说明，强调性价比）
 
 【JSON数据】
 ```json
@@ -203,231 +294,227 @@ class TravelAgent:
   "flights": [
     {{
       "id": "flight_001",
-      "carrier_code": "CA",
-      "carrier_name": "中国国航",
-      "flight_number": "1234",
+      "carrier_code": "航司代码",
+      "carrier_name": "航空公司名称",
+      "flight_number": "航班号",
       "origin": "出发地",
       "destination": "目的地",
-      "departure_time": "08:30",
-      "arrival_time": "11:00",
-      "departure_date": "2025-01-15",
-      "duration": "2小时30分钟",
-      "price": 850,
+      "departure_time": "起飞时间(HH:MM)",
+      "arrival_time": "到达时间(HH:MM)",
+      "departure_date": "出发日期(YYYY-MM-DD)",
+      "duration": "飞行时长",
+      "price": 价格数字(控制在{max_flight_price}以内),
       "cabin_class": "经济舱",
       "stops": 0,
-      "aircraft": "波音737",
-      "available_seats": 25
+      "aircraft": "机型",
+      "available_seats": 座位数
     }}
   ]
 }}
 ```
 
 要求：
-1. 推荐5个真实的航班
-2. 时间和价格要合理
-3. JSON格式严格正确
+1. 推荐5个航班选项
+2. 价格必须在¥200-¥{max_flight_price}之间
+3. 优先推荐直飞和经济舱
+4. JSON格式必须严格遵守
 """
 
         ai_response = self._call_deepseek_api(prompt)
 
         if ai_response and "error" not in ai_response:
             content = ai_response.get("content", "")
+
+            # ✅ 提取JSON数据
             flights_data = self._extract_json_from_response(content, "flights")
 
             if flights_data:
-                print(f"✅ 成功提取到 {len(flights_data)} 个航班数据")
+                # ✅ 过滤价格过高的航班
+                filtered_flights = [
+                    flight for flight in flights_data
+                    if 200 <= flight.get('price', 0) <= max_flight_price * 1.2
+                ]
+
+                if not filtered_flights:
+                    filtered_flights = self._adjust_flight_prices(flights_data, max_flight_price)
+
+                print(f"✅ 成功提取到 {len(filtered_flights)} 个航班数据（已过滤价格）")
+
                 text_part = content.split("```json")[0].strip()
                 text_part = text_part.replace("【JSON数据】", "").replace("【文字介绍】", "").strip()
 
                 return {
                     "action": "search_flights",
-                    "content": text_part,
-                    "data": flights_data,
+                    "content": text_part + f"\n\n💡 **预算提示**: 建议航班预算为 ¥{max_flight_price}，为您精选了性价比高的选择。",
+                    "data": filtered_flights,
                     "suggestions": [
                         "查看返程航班",
-                        "调整出发时间",
-                        "比较不同航空公司"
+                        "了解行李政策",
+                        "选择座位"
                     ]
                 }
             else:
-                print("⚠️ 未能提取JSON数据")
-                fallback = self._generate_fallback_response("flight", context, preferences)
-                fallback["data"] = self._generate_mock_flights(preferences)
-                return fallback
+                print("⚠️ 未能提取JSON数据，使用fallback")
+                return {
+                    "action": "search_flights",
+                    "content": content + "\n\n⚠️ 未能获取结构化数据",
+                    "data": self._generate_smart_mock_flights(preferences, max_flight_price),
+                    "suggestions": ["重新搜索"]
+                }
         else:
-            fallback = self._generate_fallback_response("flight", context, preferences)
-            fallback["data"] = self._generate_mock_flights(preferences)
-            return fallback
+            return self._generate_fallback_response("flight", context, preferences)
 
-    def _handle_weather_query(self, context: str, preferences: Dict) -> Dict:
-        """处理天气查询 - 返回JSON格式"""
+    # ✅ 新增：调整酒店价格到合理范围
+    def _adjust_hotel_prices(self, hotels: List[Dict], max_price: int) -> List[Dict]:
+        """调整酒店价格到合理范围"""
+        adjusted = []
+        for hotel in hotels:
+            adjusted_hotel = hotel.copy()
+            current_price = hotel.get('price', 500)
 
+            if current_price > max_price:
+                # 降低到最大价格的80%
+                adjusted_hotel['price'] = int(max_price * 0.8)
+            elif current_price < 100:
+                # 提高到至少100
+                adjusted_hotel['price'] = 100
+
+            adjusted.append(adjusted_hotel)
+
+        return adjusted
+
+    # ✅ 新增：调整航班价格到合理范围
+    def _adjust_flight_prices(self, flights: List[Dict], max_price: int) -> List[Dict]:
+        """调整航班价格到合理范围"""
+        adjusted = []
+        for flight in flights:
+            adjusted_flight = flight.copy()
+            current_price = flight.get('price', 800)
+
+            if current_price > max_price:
+                adjusted_flight['price'] = int(max_price * 0.8)
+            elif current_price < 200:
+                adjusted_flight['price'] = 200
+
+            adjusted.append(adjusted_flight)
+
+        return adjusted
+
+    # ✅ 改进的智能Mock数据生成
+    def _generate_smart_mock_hotels(self, preferences: Dict, max_price: int) -> List[Dict]:
+        """生成智能价格的模拟酒店数据"""
+        print(f"⚠️ 生成智能fallback酒店数据（最高价格: ¥{max_price}）")
+
+        destination = preferences.get("destination", "目的地") if preferences else "目的地"
+
+        # 生成3个不同价位的酒店
+        price_ranges = [
+            int(max_price * 0.3),  # 低价位
+            int(max_price * 0.6),  # 中价位
+            int(max_price * 0.9)   # 高价位
+        ]
+
+        hotels = []
+        hotel_templates = [
+            {"name": f"{destination}经济型连锁酒店", "type": "经济型", "rating": 3.8},
+            {"name": f"{destination}商务精选酒店", "type": "商务型", "rating": 4.2},
+            {"name": f"{destination}品质生活酒店", "type": "舒适型", "rating": 4.5}
+        ]
+
+        for idx, (template, price) in enumerate(zip(hotel_templates, price_ranges)):
+            hotels.append({
+                "id": f"hotel_{idx+1:03d}",
+                "name": template["name"],
+                "location": f"{destination}市中心",
+                "address": f"{destination}市XX路{100+idx*50}号",
+                "tel": f"400-{1000+idx:04d}-{5000+idx:04d}",
+                "price": price,
+                "rating": template["rating"],
+                "amenities": ["免费WiFi", "24小时前台", "空调"] if idx == 0 else
+                            ["免费WiFi", "健身房", "商务中心", "停车场"] if idx == 1 else
+                            ["免费WiFi", "健身房", "游泳池", "商务中心", "停车场", "早餐"],
+                "landmark": f"距离地铁站{0.3+idx*0.2:.1f}公里",
+                "description": f"{template['type']}，性价比高"
+            })
+
+        return hotels
+
+    def _generate_smart_mock_flights(self, preferences: Dict, max_price: int) -> List[Dict]:
+        """生成智能价格的模拟航班数据"""
+        print(f"⚠️ 生成智能fallback航班数据（最高价格: ¥{max_price}）")
+
+        origin = preferences.get("origin", "北京") if preferences else "北京"
+        destination = preferences.get("destination", "上海") if preferences else "上海"
+
+        # 生成3个不同价位的航班
+        price_ranges = [
+            int(max_price * 0.4),  # 低价位
+            int(max_price * 0.7),  # 中价位
+            int(max_price * 0.95)  # 高价位
+        ]
+
+        airlines = [
+            {"code": "MU", "name": "东方航空"},
+            {"code": "CA", "name": "中国国航"},
+            {"code": "CZ", "name": "南方航空"}
+        ]
+
+        flights = []
+        departure_times = ["08:30", "13:45", "18:20"]
+
+        for idx, (airline, price, dep_time) in enumerate(zip(airlines, price_ranges, departure_times)):
+            # 计算到达时间（假设飞行2.5小时）
+            dep_hour, dep_min = map(int, dep_time.split(':'))
+            arr_hour = (dep_hour + 2) % 24
+            arr_min = (dep_min + 30) % 60
+
+            flights.append({
+                "id": f"flight_{idx+1:03d}",
+                "carrier_code": airline["code"],
+                "carrier_name": airline["name"],
+                "flight_number": f"{airline['code']}{1234+idx}",
+                "origin": origin,
+                "destination": destination,
+                "departure_time": dep_time,
+                "arrival_time": f"{arr_hour:02d}:{arr_min:02d}",
+                "departure_date": str((datetime.now() + timedelta(days=1)).date()),
+                "duration": "2小时30分钟",
+                "price": price,
+                "cabin_class": "经济舱",
+                "stops": 0,
+                "aircraft": "波音737" if idx == 0 else "空客A320" if idx == 1 else "波音787",
+                "available_seats": 20 + idx * 5
+            })
+
+        return flights
+
+    # 继续使用原有的其他方法...
+    def _handle_full_planning(self, context: str, preferences: Dict) -> Dict:
+        """处理完整行程规划"""
         prompt = f"""
-你是天气信息助手。用户需求：{context}
+你是专业的旅行规划师。用户需求：{context}
 
-请按以下格式返回：
+请为用户制定详细的旅行计划，包括：
+1. 每日行程安排（上午、下午、晚上）
+2. 景点推荐和游玩建议
+3. 用餐建议
+4. 交通建议
+5. 注意事项
 
-【文字介绍】
-（这里写天气概况和建议）
-
-【JSON数据】
-```json
-{{
-  "weather": {{
-    "city": "城市名",
-    "location": "城市名",
-    "temperature": 22,
-    "feels_like": 20,
-    "weather": "晴朗",
-    "description": "晴朗",
-    "humidity": 65,
-    "wind_speed": "3.5 m/s",
-    "wind_direction": "东风",
-    "visibility": "15 km",
-    "pressure": "1013 hPa",
-    "uv_index": 5,
-    "sunrise": "06:30",
-    "sunset": "18:45",
-    "update_time": "2025-11-21 14:30",
-    "forecast": [
-      {{
-        "date": "11/22 周五",
-        "temp_high": 25,
-        "temp_low": 18,
-        "weather": "多云",
-        "description": "多云"
-      }},
-      {{
-        "date": "11/23 周六",
-        "temp_high": 23,
-        "temp_low": 17,
-        "weather": "晴",
-        "description": "晴"
-      }},
-      {{
-        "date": "11/24 周日",
-        "temp_high": 24,
-        "temp_low": 16,
-        "weather": "晴",
-        "description": "晴"
-      }},
-      {{
-        "date": "11/25 周一",
-        "temp_high": 26,
-        "temp_low": 19,
-        "weather": "多云",
-        "description": "多云"
-      }}
-    ]
-  }}
-}}
-```
-
-要求：必须包含4天的预报数据
+请用清晰、友好的语言，使用markdown格式返回。
 """
 
         ai_response = self._call_deepseek_api(prompt)
 
         if ai_response and "error" not in ai_response:
             content = ai_response.get("content", "")
-            weather_data = self._extract_json_from_response(content, "weather")
-
-            if weather_data:
-                print(f"✅ 成功提取天气数据")
-                text_part = content.split("```json")[0].strip()
-                text_part = text_part.replace("【JSON数据】", "").replace("【文字介绍】", "").strip()
-
-                return {
-                    "action": "weather",
-                    "content": text_part,
-                    "data": weather_data,
-                    "suggestions": [
-                        "查看更多天气详情",
-                        "了解最佳旅行季节",
-                        "开始规划行程"
-                    ]
-                }
-            else:
-                print("⚠️ 未能提取天气JSON数据")
-                fallback = self._generate_fallback_response("weather", context, preferences)
-                fallback["data"] = self._generate_mock_weather(preferences)
-                return fallback
-        else:
-            fallback = self._generate_fallback_response("weather", context, preferences)
-            fallback["data"] = self._generate_mock_weather(preferences)
-            return fallback
-
-    def _extract_json_from_response(self, content: str, key: str) -> Any:
-        """
-        从DeepSeek响应中提取JSON数据
-
-        Args:
-            content: DeepSeek返回的完整文本
-            key: 要提取的顶层键名 (hotels/flights/weather等)
-
-        Returns:
-            提取的数据，如果失败返回None
-        """
-        try:
-            # 方法1: 查找 ```json 代码块
-            json_match = re.search(r'```json\s*(\{.*?\})\s*```', content, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-                data = json.loads(json_str)
-
-                # 返回指定key的数据
-                if key in data:
-                    return data[key]
-                else:
-                    print(f"⚠️ JSON中没有找到key: {key}")
-                    return None
-
-            # 方法2: 尝试直接解析整个内容
-            try:
-                data = json.loads(content)
-                if key in data:
-                    return data[key]
-            except:
-                pass
-
-            print("⚠️ 无法从响应中提取JSON")
-            return None
-
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON解析失败: {e}")
-            return None
-        except Exception as e:
-            print(f"❌ 提取JSON时出错: {e}")
-            return None
-
-    def _handle_full_planning(self, context: str, preferences: Dict) -> Dict:
-        """处理完整行程规划"""
-        prompt = f"""
-你是一位专业的旅行规划师。请根据以下信息，为用户制定一份详细的旅行计划。
-
-用户需求：{context}
-
-请提供一份包含以下内容的详细行程：
-1. 每日详细行程安排（包括时间、地点、活动）
-2. 推荐的酒店和住宿
-3. 交通安排建议
-4. 美食推荐
-5. 预算估算
-6. 注意事项和旅行贴士
-
-请用友好、专业的语气回复，使用清晰的格式（可以使用emoji让内容更生动）。
-"""
-
-        ai_response = self._call_deepseek_api(prompt)
-
-        if ai_response and "error" not in ai_response:
             return {
                 "action": "full_planning",
-                "content": ai_response.get("content", ""),
-                "data": self._extract_planning_data(ai_response.get("content", "")),
+                "content": content,
+                "data": self._extract_planning_data(content),
                 "suggestions": [
-                    "查看推荐的酒店",
-                    "搜索相关航班",
+                    "查看酒店推荐",
+                    "查询航班信息",
                     "了解当地天气"
                 ]
             }
@@ -436,61 +523,123 @@ class TravelAgent:
                 "action": "full_planning",
                 "content": self._generate_fallback_planning(context, preferences),
                 "data": None,
-                "suggestions": [
-                    "重新尝试生成行程",
-                    "手动搜索酒店",
-                    "查看热门景点"
-                ]
+                "suggestions": ["重新生成", "修改需求"]
             }
+
+    def _handle_weather_query(self, context: str, preferences: Dict) -> Dict:
+        """处理天气查询"""
+        prompt = f"""
+你是专业的天气助手。用户需求：{context}
+
+请提供天气信息，并按以下JSON格式返回：
+
+【文字说明】
+（这里写天气概况和建议）
+
+【JSON数据】
+```json
+{{
+  "city": "城市名",
+  "location": "城市名",
+  "temperature": 温度数字,
+  "feels_like": 体感温度,
+  "weather": "天气状况",
+  "description": "天气描述",
+  "humidity": 湿度,
+  "wind_speed": "风速",
+  "wind_direction": "风向",
+  "forecast": [
+    {{
+      "date": "日期",
+      "temp_high": 最高温,
+      "temp_low": 最低温,
+      "weather": "天气",
+      "description": "描述"
+    }}
+  ]
+}}
+```
+"""
+
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            content = ai_response.get("content", "")
+            weather_data = self._extract_json_from_response(content, "city", is_dict=True)
+
+            if weather_data:
+                text_part = content.split("```json")[0].strip()
+                return {
+                    "action": "weather",
+                    "content": text_part,
+                    "data": weather_data,
+                    "suggestions": [
+                        "查看未来一周天气",
+                        "了解穿衣建议",
+                        "查看日出日落"
+                    ]
+                }
+            else:
+                return {
+                    "action": "weather",
+                    "content": content,
+                    "data": self._generate_mock_weather(preferences),
+                    "suggestions": ["重新查询"]
+                }
+        else:
+            return self._generate_fallback_response("weather", context, preferences)
 
     def _handle_attraction_query(self, context: str, preferences: Dict) -> Dict:
         """处理景点查询"""
         prompt = f"""
-请为用户推荐景点：
+你是专业的旅游顾问。用户需求：{context}
 
-{context}
+请推荐景点，并提供详细的游玩建议。包括：
+1. 景点名称和特色
+2. 开放时间和门票价格
+3. 游玩建议和注意事项
+4. 交通指引
 
-请包含：
-- 必游景点推荐
-- 景点特色介绍
-- 游玩建议和最佳时间
-- 门票价格参考
-
-用友好的语气回复。
+请用markdown格式返回。
 """
 
         ai_response = self._call_deepseek_api(prompt)
 
         if ai_response and "error" not in ai_response:
+            content = ai_response.get("content", "")
             return {
                 "action": "attraction",
-                "content": ai_response.get("content", ""),
+                "content": content,
                 "data": None,
                 "suggestions": [
-                    "查看更多景点",
-                    "规划游览路线",
-                    "搜索附近酒店"
+                    "查看附近酒店",
+                    "了解当地美食",
+                    "查看交通路线"
                 ]
             }
         else:
-            return self._generate_fallback_response("attraction", context, preferences)
+            return {
+                "action": "attraction",
+                "content": "正在为您搜索景点信息...",
+                "data": None,
+                "suggestions": ["重试", "更改目的地"]
+            }
 
     def _handle_general_query(self, context: str, preferences: Dict) -> Dict:
-        """处理一般查询"""
+        """处理一般性查询"""
         prompt = f"""
-作为专业的旅行助手，请回答用户的问题：
+你是友好的旅行助手。用户问题：{context}
 
-{context}
-
-请提供详细、有用的信息，如果涉及具体的旅行建议，请给出实用的推荐。
+请用简洁、友好的语言回答用户的问题。
 """
 
         ai_response = self._call_deepseek_api(prompt)
 
         if ai_response and "error" not in ai_response:
+            content = ai_response.get("content", "")
             return {
                 "action": "general",
-                "content": ai_response.get("content", ""),
+                "content": content,
                 "data": None,
                 "suggestions": self._generate_suggestions(context)
             }
@@ -501,6 +650,38 @@ class TravelAgent:
                 "data": None,
                 "suggestions": ["重新提问", "查看帮助", "联系支持"]
             }
+
+    def _extract_json_from_response(self, content: str, key: str, is_dict: bool = False) -> Any:
+        """从AI响应中提取JSON数据"""
+        try:
+            # 方法1：提取```json```代码块
+            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', content, re.MULTILINE)
+            if json_match:
+                json_str = json_match.group(1)
+                data = json.loads(json_str)
+
+                if is_dict:
+                    return data if key in str(data) else None
+                else:
+                    return data.get(key, [])
+
+            # 方法2：查找第一个完整的JSON对象
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                json_str = json_match.group(0)
+                data = json.loads(json_str)
+
+                if is_dict:
+                    return data
+                else:
+                    return data.get(key, [])
+
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON解析失败: {e}")
+        except Exception as e:
+            print(f"❌ 提取JSON失败: {e}")
+
+        return None if is_dict else []
 
     def _call_deepseek_api(self, prompt: str, max_retries: int = 3) -> Dict:
         """调用DeepSeek API"""
@@ -514,7 +695,7 @@ class TravelAgent:
         data = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "你是一位专业、友好的旅行助手。"},
+                {"role": "system", "content": "你是一位专业、友好的旅行助手。你会根据用户的预算给出合理的建议，不会推荐价格过高的选项。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7,
@@ -569,10 +750,10 @@ class TravelAgent:
         print("❌ 所有重试都失败了")
         return {"error": "API调用失败，请检查网络连接或稍后重试"}
 
-    # ==================== Fallback生成函数（仅在API失败时使用） ====================
+    # ==================== Fallback生成函数 ====================
 
     def _generate_fallback_planning(self, context: str, preferences: Dict) -> str:
-        """生成备用的行程规划（当API失败时）"""
+        """生成备用的行程规划"""
         destination = preferences.get("destination", "目的地") if preferences else "目的地"
         days = preferences.get("days", 3) if preferences else 3
         budget = preferences.get("budget", 5000) if preferences else 5000
@@ -660,55 +841,14 @@ class TravelAgent:
 
         return suggestions[:3]
 
-    # ==================== Mock数据生成（仅作为fallback） ====================
-
-    def _generate_mock_hotels(self, preferences: Dict) -> List[Dict]:
-        """生成模拟酒店数据（仅在DeepSeek失败时使用）"""
-        print("⚠️ 使用fallback mock数据")
-        return [
-            {
-                "id": "hotel_001",
-                "name": "示例酒店1",
-                "location": "市中心",
-                "address": "示例地址1号",
-                "tel": "400-000-0001",
-                "price": 500,
-                "rating": 4.5,
-                "amenities": ["免费WiFi", "早餐"],
-                "landmark": "近地铁站",
-                "description": "示例数据"
-            }
-        ]
-
-    def _generate_mock_flights(self, preferences: Dict) -> List[Dict]:
-        """生成模拟航班数据（仅在DeepSeek失败时使用）"""
-        print("⚠️ 使用fallback mock数据")
-        return [
-            {
-                "id": "flight_001",
-                "carrier_code": "XX",
-                "carrier_name": "示例航空",
-                "flight_number": "0000",
-                "origin": "出发地",
-                "destination": "目的地",
-                "departure_time": "08:00",
-                "arrival_time": "10:00",
-                "departure_date": str(datetime.now().date()),
-                "duration": "2小时",
-                "price": 800,
-                "cabin_class": "经济舱",
-                "stops": 0,
-                "aircraft": "波音737",
-                "available_seats": 20
-            }
-        ]
-
     def _generate_mock_weather(self, preferences: Dict) -> Dict:
-        """生成模拟天气数据（仅在DeepSeek失败时使用）"""
-        print("⚠️ 使用fallback mock数据")
+        """生成模拟天气数据"""
+        print("⚠️ 使用fallback天气数据")
+        destination = preferences.get("destination", "示例城市") if preferences else "示例城市"
+
         return {
-            "city": "示例城市",
-            "location": "示例城市",
+            "city": destination,
+            "location": destination,
             "temperature": 20,
             "feels_like": 18,
             "weather": "晴",

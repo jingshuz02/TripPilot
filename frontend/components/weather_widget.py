@@ -135,6 +135,7 @@ def display_weather_enhanced(weather_data, city_name=None):
     </style>
     """, unsafe_allow_html=True)
 
+
     # 提取数据
     if not city_name:
         city_name = weather_data.get('city', weather_data.get('location', '城市'))
