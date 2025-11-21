@@ -1134,9 +1134,9 @@ def display_suggestions(suggestions: list, msg_idx: int = 0):
                 st.rerun()
 
 
-# ==================== Orders View ====================
+# ==================== Orders View with Data Visualization ====================
 def display_orders_view():
-    """Display order management view"""
+    """Display order management view with charts"""
 
     # Back to chat button
     col_nav1, col_nav2 = st.columns([1, 5])
@@ -1202,7 +1202,7 @@ def display_orders_view():
 
     st.divider()
 
-    # Order list
+    # ==================== 📊 Data Visualization Area ====================
     if not orders:
         st.info("📝 No orders yet")
         st.markdown("""
@@ -1211,7 +1211,182 @@ def display_orders_view():
         - Select suitable options and complete booking
         - Orders will automatically appear on this page
         """)
+
+        # Provide test data option
+        if st.button("🧪 Load Test Data (Demo Only)", type="primary"):
+            test_orders = [
+                {
+                    "id": "TEST001",
+                    "type": "hotel",
+                    "item_name": "Chengdu Oriental Plaza NUO Hotel",
+                    "price": 1440,
+                    "created_at": "2025-11-22 10:30:00",
+                    "status": "Paid",
+                    "item_details": {
+                        "name": "Chengdu Oriental Plaza NUO Hotel",
+                        "location": "Jinjiang District, Chengdu",
+                        "rating": 4.8,
+                        "nights": 2
+                    }
+                },
+                {
+                    "id": "TEST002",
+                    "type": "hotel",
+                    "item_name": "Chengdu Times Garden Hotel",
+                    "price": 1460,
+                    "created_at": "2025-11-23 14:20:00",
+                    "status": "Paid",
+                    "item_details": {
+                        "name": "Chengdu Times Garden Hotel",
+                        "location": "Wuhou District, Chengdu",
+                        "rating": 4.7,
+                        "nights": 2
+                    }
+                }
+            ]
+            current_conv["orders"] = test_orders
+            current_conv["total_spent"] = 2900
+            st.success("✅ Test data loaded!")
+            st.rerun()
+
     else:
+        # ==================== Show Charts ====================
+        st.subheader("📊 Data Analysis")
+
+        try:
+            import plotly.graph_objects as go
+
+            # Create two rows of charts
+            chart_row1_col1, chart_row1_col2 = st.columns(2)
+
+            with chart_row1_col1:
+                # Chart 1: Budget Usage Pie Chart
+                remaining_amt = max(0, total_budget - total_spent)
+
+                fig1 = go.Figure(data=[go.Pie(
+                    labels=['Spent', 'Remaining'],
+                    values=[total_spent, remaining_amt],
+                    hole=.3,
+                    marker_colors=['#ef4444', '#10b981'],
+                    textinfo='label+percent',
+                    textfont_size=14,
+                )])
+
+                fig1.update_layout(
+                    title_text="Budget Usage",
+                    height=300,
+                    showlegend=True,
+                    margin=dict(t=40, b=20, l=20, r=20)
+                )
+
+                st.plotly_chart(fig1, use_container_width=True, key="budget_chart")
+
+            with chart_row1_col2:
+                # Chart 2: Order Type Distribution
+                type_counts = {}
+                type_labels = {"hotel": "🏨 Hotels", "flight": "✈️ Flights"}
+
+                for order in orders:
+                    order_type = order.get("type", "unknown")
+                    label = type_labels.get(order_type, "Others")
+                    type_counts[label] = type_counts.get(label, 0) + 1
+
+                fig2 = go.Figure(data=[go.Pie(
+                    labels=list(type_counts.keys()),
+                    values=list(type_counts.values()),
+                    hole=.3,
+                    marker_colors=['#3b82f6', '#f59e0b', '#8b5cf6'],
+                    textinfo='label+value',
+                    textfont_size=14,
+                )])
+
+                fig2.update_layout(
+                    title_text="Order Type Distribution",
+                    height=300,
+                    showlegend=True,
+                    margin=dict(t=40, b=20, l=20, r=20)
+                )
+
+                st.plotly_chart(fig2, use_container_width=True, key="type_chart")
+
+            chart_row2_col1, chart_row2_col2 = st.columns(2)
+
+            with chart_row2_col1:
+                # Chart 3: Order Amount Bar Chart
+                hotel_total = sum(o["price"] for o in orders if o.get("type") == "hotel")
+                flight_total = sum(o["price"] for o in orders if o.get("type") == "flight")
+
+                fig3 = go.Figure(data=[
+                    go.Bar(
+                        x=['🏨 Hotels', '✈️ Flights'],
+                        y=[hotel_total, flight_total],
+                        marker_color=['#3b82f6', '#f59e0b'],
+                        text=[f'¥{hotel_total:,.0f}', f'¥{flight_total:,.0f}'],
+                        textposition='auto',
+                    )
+                ])
+
+                fig3.update_layout(
+                    title_text="Total Amount by Type",
+                    xaxis_title="Order Type",
+                    yaxis_title="Amount (¥)",
+                    height=300,
+                    showlegend=False,
+                    margin=dict(t=40, b=40, l=40, r=20)
+                )
+
+                st.plotly_chart(fig3, use_container_width=True, key="amount_chart")
+
+            with chart_row2_col2:
+                # Chart 4: Spending Trend
+                if len(orders) >= 2:
+                    sorted_orders = sorted(orders, key=lambda x: x.get("created_at", ""))
+
+                    dates = []
+                    cumulative_spending = []
+                    current_total = 0
+
+                    for order in sorted_orders:
+                        created_at = order.get("created_at", "")
+                        if created_at:
+                            date_str = created_at.split()[0] if " " in created_at else created_at[:10]
+                            dates.append(date_str)
+                            current_total += order.get("price", 0)
+                            cumulative_spending.append(current_total)
+
+                    fig4 = go.Figure()
+
+                    fig4.add_trace(go.Scatter(
+                        x=dates,
+                        y=cumulative_spending,
+                        mode='lines+markers',
+                        name='Cumulative Spending',
+                        line=dict(color='#10b981', width=3),
+                        marker=dict(size=8)
+                    ))
+
+                    fig4.update_layout(
+                        title_text="Spending Trend",
+                        xaxis_title="Date",
+                        yaxis_title="Cumulative Amount (¥)",
+                        height=300,
+                        showlegend=True,
+                        margin=dict(t=40, b=40, l=40, r=20)
+                    )
+
+                    st.plotly_chart(fig4, use_container_width=True, key="trend_chart")
+                else:
+                    st.info("📈 Insufficient orders to display trend chart (at least 2 orders required)")
+
+        except ImportError:
+            st.warning("⚠️ Plotly not installed. Charts cannot be displayed.")
+            st.code("pip install plotly", language="bash")
+        except Exception as e:
+            st.error(f"❌ Chart generation error: {str(e)}")
+
+        st.divider()
+
+        # ==================== Order List ====================
         st.subheader(f"📋 Order List ({len(orders)} items)")
 
         # Sort options
@@ -1351,8 +1526,6 @@ def display_orders_view():
                 current_conv["total_spent"] = 0
                 st.success("✅ All orders cleared")
                 st.rerun()
-
-
 
 # ✅ Modified booking handling function - use session_state to delay dialog trigger
 def handle_booking(order_type: str, item: dict, price: float):
