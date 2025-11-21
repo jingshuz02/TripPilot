@@ -1,827 +1,543 @@
 """
-改进版 TripPilot Agent - 真正的智能旅行规划系统
-解决核心问题：
-1. 智能意图理解与多步骤规划
-2. 用户需求精准匹配
-3. 完整的行程规划能力
+TripPilot Travel Agent - 修复版
+修复了API超时问题
 """
 
-from typing import Dict, Any, List, Optional
 import json
-from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
-from enum import Enum
-
-
-# ==================== 数据结构定义 ====================
-
-@dataclass
-class UserPreferences:
-    """用户偏好数据结构"""
-    budget: float
-    start_date: str
-    end_date: str
-    travelers: int = 1
-    hotel_requirements: List[str] = None  # ["停车场", "游泳池", "健身房"]
-    flight_class: str = "ECONOMY"
-    interests: List[str] = None  # ["文化", "美食", "购物"]
-
-    def __post_init__(self):
-        if self.hotel_requirements is None:
-            self.hotel_requirements = []
-        if self.interests is None:
-            self.interests = []
-
-
-class IntentType(Enum):
-    """意图类型枚举"""
-    FLIGHT = "flight"
-    HOTEL = "hotel"
-    WEATHER = "weather"
-    ATTRACTION = "attraction"
-    RESTAURANT = "restaurant"
-    ROUTE = "route"
-    FULL_PLANNING = "full_planning"  # 完整行程规划
-    TICKET = "ticket"  # 门票查询
-    GENERAL = "general"
-
-
-@dataclass
-class TravelPlan:
-    """完整旅行计划"""
-    destination: str
-    start_date: str
-    end_date: str
-    total_budget: float
-    daily_plans: List[Dict]  # 每日行程
-    hotels: List[Dict]  # 酒店列表
-    flights: List[Dict]  # 航班列表
-    estimated_cost: float
-    recommendations: List[str]  # 建议事项
-
-
-# ==================== 改进版 Agent 核心 ====================
+import time
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+import requests
+from config.config import Config
 
 class TravelAgent:
-    """
-    改进版旅行Agent
-    核心改进：
-    1. 多步骤规划能力
-    2. 上下文记忆
-    3. 需求精准匹配
-    4. 统一响应格式
-    """
+    """智能旅行助手Agent"""
 
     def __init__(self):
         """初始化Agent"""
-        # 上下文管理
-        self.conversation_context = []
-        self.user_preferences = None
-        self.current_plan = None
+        print("🚀 初始化TripPilot Agent...")
 
-        # 工具初始化
-        from backend.tools.travel_tools import TravelTools
-        self.tools = TravelTools()
+        # 初始化配置
+        self.config = Config()
+        self.api_key = Config.DEEPSEEK_API_KEY
+        self.base_url = Config.DEEPSEEK_BASE_URL
+        self.model = Config.DEEPSEEK_MODEL
 
-        print("✅ 改进版Agent初始化完成")
+        # 初始化工具状态
+        self.init_tools()
 
-    def process(self, user_message: str, preferences: Dict = None) -> Dict[str, Any]:
+        # 对话历史
+        self.conversation_history = []
+
+        print("✅ Agent初始化完成！\n")
+
+    def init_tools(self):
+        """初始化工具"""
+        # 检查API配置
+        tools_status = []
+
+        if Config.GAODE_API_KEY:
+            tools_status.append("  高德API: ✅ 已配置")
+        else:
+            tools_status.append("  高德API: ❌ 未配置")
+
+        if self.api_key:
+            tools_status.append("  DeepSeek: ✅ 已配置")
+        else:
+            tools_status.append("  DeepSeek: ❌ 未配置")
+
+        for status in tools_status:
+            print(status)
+
+        print("✅ 工具初始化完成")
+
+        if self.api_key:
+            print(f"✅ DeepSeek API已配置")
+            print(f"   Key前缀: {self.api_key[:12]}...")
+
+    def process_message(self, message: str, preferences: Dict = None) -> Dict:
         """
-        主处理方法 - 改进版
+        处理用户消息
+
+        Args:
+            message: 用户输入
+            preferences: 用户偏好设置
 
         Returns:
-            统一格式响应：
-            {
-                "action": str,  # 动作类型
-                "content": str,  # 文本描述
-                "data": Any,    # 结构化数据
-                "suggestions": List[str],  # 后续建议
-                "requires_confirmation": bool  # 是否需要确认
-            }
+            响应字典
         """
-        # 1. 更新用户偏好
+        print("=" * 60)
+        print(f"📥 收到用户消息: {message}")
+
+        # 添加偏好信息到消息
         if preferences:
-            self.user_preferences = UserPreferences(**preferences)
+            context = self._build_context(message, preferences)
+        else:
+            context = message
 
-        # 2. 理解意图（改进版）
-        intent_result = self.understand_intent_advanced(user_message)
-        intent = intent_result['intent']
-        entities = intent_result['entities']
+        # 识别意图
+        intent = self._identify_intent(message)
+        print(f"🎯 识别意图: {intent}")
 
-        print(f"📊 意图分析: {intent.value}")
-        print(f"📦 实体提取: {entities}")
+        # 根据意图处理
+        if intent == "full_planning":
+            return self._handle_full_planning(context, preferences)
+        elif intent == "search_hotels":
+            return self._handle_hotel_search(context, preferences)
+        elif intent == "search_flights":
+            return self._handle_flight_search(context, preferences)
+        elif intent == "weather":
+            return self._handle_weather_query(context, preferences)
+        elif intent == "attraction":
+            return self._handle_attraction_query(context, preferences)
+        else:
+            return self._handle_general_query(context, preferences)
 
-        # 3. 执行相应功能
-        try:
-            # 路线规划 - 修正
-            if intent == IntentType.ROUTE:
-                return self.handle_route_planning_fixed(entities)
+    def _build_context(self, message: str, preferences: Dict) -> str:
+        """构建上下文信息"""
+        context_parts = [message]
 
-            # 完整行程规划 - 新增
-            elif intent == IntentType.FULL_PLANNING:
-                return self.handle_full_trip_planning(entities)
+        if preferences:
+            if preferences.get("destination"):
+                context_parts.append(f"目的地: {preferences['destination']}")
+            if preferences.get("budget"):
+                context_parts.append(f"预算: ¥{preferences['budget']}")
+            if preferences.get("start_date") and preferences.get("end_date"):
+                context_parts.append(f"日期: {preferences['start_date']} 至 {preferences['end_date']}")
 
-            # 酒店搜索 - 增强版
-            elif intent == IntentType.HOTEL:
-                return self.handle_hotel_enhanced(entities)
+        return " | ".join(context_parts)
 
-            # 门票查询 - 新增
-            elif intent == IntentType.TICKET:
-                return self.handle_ticket_search(entities)
+    def _identify_intent(self, message: str) -> str:
+        """识别用户意图"""
+        message_lower = message.lower()
 
-            # 航班搜索 - 修正
-            elif intent == IntentType.FLIGHT:
-                return self.handle_flight_enhanced(entities)
-
-            # 其他原有功能...
-            else:
-                return self.handle_original_intents(intent, entities)
-
-        except Exception as e:
-            print(f"❌ 处理错误: {e}")
-            return self.generate_error_response(str(e))
-
-    def understand_intent_advanced(self, message: str) -> Dict:
-        """
-        改进版意图理解
-        使用更智能的NLP分析
-        """
-        msg_lower = message.lower()
-        entities = {}
-
-        # 1. 路线规划识别（修正）
-        route_keywords = ['怎么去', '路线', '导航', '从.*到', '最快.*到', '机场.*市区']
-        if any(keyword in msg_lower for keyword in route_keywords):
-            # 提取起点和终点
-            import re
-            # 匹配 "从X到Y" 模式
-            pattern = r'从(.+?)到(.+?)(?:[的，。？]|$)'
-            match = re.search(pattern, message)
-            if match:
-                entities['origin'] = match.group(1)
-                entities['destination'] = match.group(2)
-            # 匹配 "机场到市区" 模式
-            elif '机场' in message and '市区' in message:
-                entities['origin'] = '机场'
-                entities['destination'] = '市区'
-
-            return {'intent': IntentType.ROUTE, 'entities': entities}
-
-        # 2. 完整行程规划识别
-        planning_keywords = ['规划.*行程', '安排.*旅游', '制定.*计划', '整个行程', '完整.*攻略']
-        if any(keyword in msg_lower for keyword in planning_keywords):
-            entities = self._extract_planning_entities(message)
-            return {'intent': IntentType.FULL_PLANNING, 'entities': entities}
-
-        # 3. 酒店搜索（增强版）
-        hotel_keywords = ['酒店', '住宿', '旅馆', '民宿']
-        if any(word in msg_lower for word in hotel_keywords):
-            entities = self._extract_hotel_requirements(message)
-            return {'intent': IntentType.HOTEL, 'entities': entities}
-
-        # 4. 门票查询
-        ticket_keywords = ['门票', '票价', '开放时间', '营业时间']
-        if any(word in msg_lower for word in ticket_keywords):
-            entities['attraction'] = self._extract_attraction_name(message)
-            return {'intent': IntentType.TICKET, 'entities': entities}
-
-        # 5. 航班搜索
-        if any(word in msg_lower for word in ['航班', '飞机', '机票', '飞往']):
-            entities = self._extract_flight_info(message)
-            return {'intent': IntentType.FLIGHT, 'entities': entities}
-
-        # 其他意图...
-        return {'intent': IntentType.GENERAL, 'entities': entities}
-
-    def _extract_hotel_requirements(self, message: str) -> Dict:
-        """提取酒店需求"""
-        entities = {
-            'city': self._extract_city(message),
-            'requirements': [],
-            'price_range': None
+        # 关键词映射
+        intent_keywords = {
+            "full_planning": ["规划", "行程", "安排", "计划", "游玩", "旅行", "旅游", "几天", "日游"],
+            "search_hotels": ["酒店", "住宿", "旅馆", "民宿", "住哪"],
+            "search_flights": ["航班", "机票", "飞机", "飞往"],
+            "weather": ["天气", "气温", "下雨", "温度", "穿什么"],
+            "attraction": ["景点", "好玩", "去哪", "推荐", "必游", "有什么"]
         }
 
-        # 设施需求提取
-        facilities = {
-            '停车场': ['停车', '车位', 'parking'],
-            '游泳池': ['游泳池', '泳池', 'pool'],
-            '健身房': ['健身', 'gym'],
-            '早餐': ['早餐', '早饭', 'breakfast'],
-            'WiFi': ['wifi', '网络', '无线网'],
-            '商务': ['商务', '会议'],
-        }
+        for intent, keywords in intent_keywords.items():
+            if any(keyword in message_lower for keyword in keywords):
+                return intent
 
-        for facility, keywords in facilities.items():
-            if any(kw in message.lower() for kw in keywords):
-                entities['requirements'].append(facility)
+        return "general"
 
-        # 价格范围提取
-        import re
-        price_pattern = r'(\d+)[-到至](\d+)[元块]'
-        match = re.search(price_pattern, message)
-        if match:
-            entities['price_range'] = (int(match.group(1)), int(match.group(2)))
+    def _handle_full_planning(self, context: str, preferences: Dict) -> Dict:
+        """处理完整行程规划"""
+        prompt = f"""
+你是一位专业的旅行规划师。请根据以下信息，为用户制定一份详细的旅行计划。
 
-        # 房型提取
-        if '双人' in message or '标间' in message:
-            entities['room_type'] = '双人间'
-        elif '大床' in message:
-            entities['room_type'] = '大床房'
-        elif '套房' in message:
-            entities['room_type'] = '套房'
+用户需求：{context}
 
-        return entities
+请提供一份包含以下内容的详细行程：
+1. 每日详细行程安排（包括时间、地点、活动）
+2. 推荐的酒店和住宿
+3. 交通安排建议
+4. 美食推荐
+5. 预算估算
+6. 注意事项和旅行贴士
 
-    # ==================== 核心功能处理 ====================
-
-    def handle_route_planning_fixed(self, entities: Dict) -> Dict:
-        """修正：路线规划处理"""
-        origin = entities.get('origin', '当前位置')
-        destination = entities.get('destination', '目的地')
-
-        # 调用地图API获取路线
-        route_info = self._get_route_info(origin, destination)
-
-        content = f"""
-### 🗺️ 路线规划：{origin} → {destination}
-
-**推荐方案：**
+请用友好、专业的语气回复，使用清晰的格式（可以使用emoji让内容更生动）。
 """
 
-        # 生成多种交通方案
-        options = [
+        # 调用AI生成响应
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            return {
+                "action": "full_planning",
+                "content": ai_response.get("content", ""),
+                "data": self._extract_planning_data(ai_response.get("content", "")),
+                "suggestions": [
+                    "查看推荐的酒店",
+                    "搜索相关航班",
+                    "了解当地天气"
+                ]
+            }
+        else:
+            # 如果API调用失败，返回更好的提示
+            return {
+                "action": "full_planning",
+                "content": self._generate_fallback_planning(context, preferences),
+                "data": None,
+                "suggestions": [
+                    "重新尝试生成行程",
+                    "手动搜索酒店",
+                    "查看热门景点"
+                ]
+            }
+
+    def _handle_hotel_search(self, context: str, preferences: Dict) -> Dict:
+        """处理酒店搜索"""
+        prompt = f"""
+请为用户推荐符合以下条件的酒店：
+
+{context}
+
+请推荐5个不同档次的酒店，包含：
+- 酒店名称
+- 地理位置
+- 价格范围
+- 特色和优势
+- 用户评分
+
+用友好的语气介绍，并说明推荐理由。
+"""
+
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            return {
+                "action": "search_hotels",
+                "content": ai_response.get("content", ""),
+                "data": self._generate_mock_hotels(preferences),
+                "suggestions": [
+                    "查看更多酒店",
+                    "调整价格范围",
+                    "查看用户评价"
+                ]
+            }
+        else:
+            return self._generate_fallback_response("hotel", context, preferences)
+
+    def _handle_flight_search(self, context: str, preferences: Dict) -> Dict:
+        """处理航班搜索"""
+        prompt = f"""
+请为用户查询符合以下条件的航班：
+
+{context}
+
+请提供航班信息，包含：
+- 航班号
+- 起飞和到达时间
+- 航空公司
+- 价格范围
+- 飞行时长
+
+用友好的语气介绍。
+"""
+
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            return {
+                "action": "search_flights",
+                "content": ai_response.get("content", ""),
+                "data": None,
+                "suggestions": [
+                    "查看返程航班",
+                    "调整出发时间",
+                    "比较不同航空公司"
+                ]
+            }
+        else:
+            return self._generate_fallback_response("flight", context, preferences)
+
+    def _handle_weather_query(self, context: str, preferences: Dict) -> Dict:
+        """处理天气查询"""
+        prompt = f"""
+请为用户提供天气信息：
+
+{context}
+
+请包含：
+- 当前天气状况
+- 未来几天天气预报
+- 穿衣建议
+- 旅行注意事项
+
+用友好的语气回复。
+"""
+
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            return {
+                "action": "weather",
+                "content": ai_response.get("content", ""),
+                "data": None,
+                "suggestions": [
+                    "查看更多天气详情",
+                    "了解最佳旅行季节",
+                    "开始规划行程"
+                ]
+            }
+        else:
+            return self._generate_fallback_response("weather", context, preferences)
+
+    def _handle_attraction_query(self, context: str, preferences: Dict) -> Dict:
+        """处理景点查询"""
+        prompt = f"""
+请为用户推荐景点：
+
+{context}
+
+请包含：
+- 必游景点推荐
+- 景点特色介绍
+- 游玩建议和最佳时间
+- 门票价格参考
+
+用友好的语气回复。
+"""
+
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            return {
+                "action": "attraction",
+                "content": ai_response.get("content", ""),
+                "data": None,
+                "suggestions": [
+                    "查看更多景点",
+                    "规划游览路线",
+                    "搜索附近酒店"
+                ]
+            }
+        else:
+            return self._generate_fallback_response("attraction", context, preferences)
+
+    def _handle_general_query(self, context: str, preferences: Dict) -> Dict:
+        """处理一般查询"""
+        prompt = f"""
+作为专业的旅行助手，请回答用户的问题：
+
+{context}
+
+请提供详细、有用的信息，如果涉及具体的旅行建议，请给出实用的推荐。
+"""
+
+        ai_response = self._call_deepseek_api(prompt)
+
+        if ai_response and "error" not in ai_response:
+            return {
+                "action": "general",
+                "content": ai_response.get("content", ""),
+                "data": None,
+                "suggestions": self._generate_suggestions(context)
+            }
+        else:
+            return {
+                "action": "general",
+                "content": "抱歉，AI服务暂时不可用。请稍后重试或尝试更具体的问题。",
+                "data": None,
+                "suggestions": ["重新提问", "查看帮助", "联系支持"]
+            }
+
+    def _call_deepseek_api(self, prompt: str, max_retries: int = 3) -> Dict:
+        """
+        调用DeepSeek API - 修复版
+
+        修复内容：
+        1. 增加超时时间到60秒（原来15秒太短）
+        2. 增加重试次数到3次
+        3. 添加更详细的错误信息
+        4. 优化重试逻辑
+
+        Args:
+            prompt: 提示词
+            max_retries: 最大重试次数
+
+        Returns:
+            API响应
+        """
+        print("🚀 调用DeepSeek API...")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        data = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是一位专业、友好的旅行助手。"},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
+
+        for attempt in range(max_retries):
+            try:
+                print(f"📡 尝试第 {attempt + 1}/{max_retries} 次请求...")
+
+                # ✅ 修复：增加超时时间到60秒
+                response = requests.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=60  # 从15秒增加到60秒
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result['choices'][0]['message']['content']
+                    print(f"✅ API响应成功，长度：{len(content)}字符")
+                    return {"content": content}
+                elif response.status_code == 429:
+                    # 速率限制
+                    print(f"⚠️ API速率限制，等待后重试...")
+                    wait_time = 5 * (attempt + 1)
+                    time.sleep(wait_time)
+                elif response.status_code == 401:
+                    print(f"❌ API密钥无效")
+                    return {"error": "API密钥无效"}
+                else:
+                    print(f"❌ API返回错误: {response.status_code} - {response.text[:200]}")
+                    if attempt < max_retries - 1:
+                        print("等待后重试...")
+                        time.sleep(3)
+
+            except requests.exceptions.Timeout:
+                print(f"⚠️ 请求超时 (尝试 {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    print("等待后重试...")
+                    time.sleep(3)
+
+            except requests.exceptions.ConnectionError as e:
+                print(f"⚠️ 连接错误: {e}")
+                if attempt < max_retries - 1:
+                    print("等待后重试...")
+                    time.sleep(3)
+
+            except Exception as e:
+                print(f"❌ 调用DeepSeek API失败: {e}")
+                break
+
+        print("❌ 所有重试都失败了")
+        return {"error": "API调用失败，请检查网络连接或稍后重试"}
+
+    def _generate_fallback_planning(self, context: str, preferences: Dict) -> str:
+        """生成备用的行程规划（当API失败时）"""
+        destination = preferences.get("destination", "目的地") if preferences else "目的地"
+        days = preferences.get("days", 3) if preferences else 3
+        budget = preferences.get("budget", 5000) if preferences else 5000
+
+        return f"""
+🗺️ **{destination}旅行计划**
+
+虽然AI服务暂时不可用，但我为您准备了一个参考行程框架：
+
+📅 **行程概览**
+- 目的地：{destination}
+- 天数：{days}天
+- 预算：¥{budget}
+
+🌟 **Day 1 - 抵达与初探**
+• 上午：抵达{destination}，酒店办理入住
+• 下午：游览市中心主要景点
+• 晚上：品尝当地特色美食
+
+🌟 **Day 2 - 深度游览**  
+• 上午：参观著名文化景点
+• 下午：体验当地特色活动
+• 晚上：逛夜市或商业街
+
+🌟 **Day 3 - 自由探索** 
+• 上午：自由活动或补充游览
+• 下午：购物和准备返程
+• 晚上：返程
+
+💡 **温馨提示**
+1. 建议提前预订酒店和门票
+2. 准备好必要的旅行证件
+3. 了解当地天气，准备合适衣物
+4. 下载离线地图以备不时之需
+
+🔄 您可以点击"重新生成"获取更详细的AI定制行程。
+"""
+
+    def _generate_fallback_response(self, type: str, context: str, preferences: Dict) -> Dict:
+        """生成备用响应"""
+        fallback_messages = {
+            "hotel": "正在为您搜索合适的酒店，请稍候...",
+            "flight": "正在查询航班信息，请稍候...",
+            "weather": "正在获取天气信息，请稍候...",
+            "attraction": "正在搜索景点信息，请稍候...",
+            "general": "我正在处理您的请求，请稍候..."
+        }
+
+        return {
+            "action": type,
+            "content": fallback_messages.get(type, "处理中..."),
+            "data": None,
+            "suggestions": ["重试", "换个问题", "查看帮助"]
+        }
+
+    def _extract_planning_data(self, content: str) -> Dict:
+        """从AI生成的内容中提取结构化数据"""
+        # 这里可以使用更复杂的提取逻辑
+        data = {
+            "destination": "",
+            "days": 0,
+            "budget": 0,
+            "itinerary": {}
+        }
+
+        # 简单的提取逻辑示例
+        if "天" in content:
+            # 尝试提取天数
+            import re
+            days_match = re.search(r'(\d+)天', content)
+            if days_match:
+                data["days"] = int(days_match.group(1))
+
+        return data if any(data.values()) else None
+
+    def _generate_mock_hotels(self, preferences: Dict) -> List[Dict]:
+        """生成模拟酒店数据"""
+        destination = preferences.get("destination", "城市") if preferences else "城市"
+        budget = preferences.get("budget", 5000) if preferences else 5000
+
+        # 根据预算生成不同档次的酒店
+        hotels = [
             {
-                'method': '地铁',
-                'duration': '35分钟',
-                'cost': '¥8',
-                'details': '地铁5号线 → 换乘2号线',
-                'pros': '快速、准时、不堵车'
+                "id": "hotel_001",
+                "name": f"{destination}希尔顿酒店",
+                "location": f"{destination}市中心",
+                "price": int(budget * 0.15),  # 每晚预算的15%
+                "rating": 4.8,
+                "amenities": ["免费WiFi", "健身房", "游泳池"]
             },
             {
-                'method': '出租车',
-                'duration': '25-40分钟',
-                'cost': '¥60-80',
-                'details': '直达，视路况而定',
-                'pros': '舒适、直达、行李方便'
+                "id": "hotel_002",
+                "name": f"{destination}商务酒店",
+                "location": f"{destination}商业区",
+                "price": int(budget * 0.1),  # 每晚预算的10%
+                "rating": 4.2,
+                "amenities": ["免费WiFi", "早餐"]
             },
             {
-                'method': '机场快线',
-                'duration': '30分钟',
-                'cost': '¥25',
-                'details': '机场快线直达市中心',
-                'pros': '专线、舒适、有座位'
+                "id": "hotel_003",
+                "name": f"{destination}精品民宿",
+                "location": f"{destination}老城区",
+                "price": int(budget * 0.08),  # 每晚预算的8%
+                "rating": 4.5,
+                "amenities": ["特色装修", "本地体验"]
             }
         ]
 
-        for i, opt in enumerate(options, 1):
-            content += f"""
-**{i}. {opt['method']}**
-- ⏱️ 时间：{opt['duration']}
-- 💰 费用：{opt['cost']}
-- 📍 路线：{opt['details']}
-- ✅ 优势：{opt['pros']}
-"""
-
-        return {
-            'action': 'route_planning',
-            'content': content,
-            'data': {
-                'origin': origin,
-                'destination': destination,
-                'routes': options,
-                'recommended': options[0]
-            },
-            'suggestions': [
-                f"建议提前预订{destination}附近的酒店",
-                "记得查看实时路况",
-                "高峰期建议选择地铁"
-            ],
-            'requires_confirmation': False
-        }
-
-    def handle_full_trip_planning(self, entities: Dict) -> Dict:
-        """完整行程规划"""
-        destination = entities.get('destination', '目的地')
-        days = entities.get('days', 3)
-        budget = entities.get('budget', 3000)
-
-        # 生成完整行程计划
-        plan = self._generate_full_itinerary(destination, days, budget)
-
-        content = f"""
-### 🎯 {destination} {days}天完整行程规划
-
-**预算：¥{budget}** | **日期：{entities.get('start_date', '待定')}**
-
----
-"""
-
-        # 每日行程
-        daily_plans = []
-        for day in range(1, days + 1):
-            day_plan = {
-                'day': day,
-                'morning': f'景点参观（如故宫、长城等）',
-                'afternoon': f'文化体验（如胡同游、博物馆）',
-                'evening': f'美食探索（如烤鸭、小吃街）',
-                'accommodation': f'推荐住宿区域：王府井/三里屯',
-                'transport': '地铁+步行',
-                'estimated_cost': budget / days
-            }
-            daily_plans.append(day_plan)
-
-            content += f"""
-**第{day}天行程：**
-🌅 上午：{day_plan['morning']}
-☀️ 下午：{day_plan['afternoon']}
-🌃 晚上：{day_plan['evening']}
-🏨 住宿：{day_plan['accommodation']}
-🚇 交通：{day_plan['transport']}
-💰 预计花费：¥{day_plan['estimated_cost']:.0f}
-
-"""
-
-        # 推荐清单
-        content += """
----
-### 📋 必备清单
-
-**🏨 住宿推荐（2-3晚）：**
-- 经济型：如家/汉庭 (¥200-300/晚)
-- 舒适型：亚朵/全季 (¥400-600/晚)
-- 豪华型：万豪/希尔顿 (¥800+/晚)
-
-**✈️ 交通安排：**
-- 机票：提前预订可节省30-50%
-- 市内：地铁日票¥20/天
-
-**🎫 门票预算：**
-- 主要景点：¥500-800
-- 美食体验：¥600-1000
-
-**💡 省钱技巧：**
-1. 提前在线预订门票有优惠
-2. 避开周末和节假日
-3. 选择地铁出行最经济
-"""
-
-        # 返回完整响应
-        return {
-            'action': 'full_planning',
-            'content': content,
-            'data': {
-                'destination': destination,
-                'duration': days,
-                'budget': budget,
-                'daily_plans': daily_plans,
-                'total_cost_estimate': budget * 0.9,
-                'hotels': self._recommend_hotels_for_plan(destination, budget/days/3),
-                'flights': self._recommend_flights_for_plan(destination),
-                'attractions': self._get_top_attractions(destination)
-            },
-            'suggestions': [
-                "建议提前2周预订机票和酒店",
-                "可以根据实际情况调整每日行程",
-                "记得购买旅游保险"
-            ],
-            'requires_confirmation': True
-        }
-
-    def handle_hotel_enhanced(self, entities: Dict) -> Dict:
-        """增强版酒店搜索 - 支持筛选"""
-        city = entities.get('city', '北京')
-        requirements = entities.get('requirements', [])
-        price_range = entities.get('price_range')
-
-        # 获取酒店列表
-        hotels = self.tools.search_hotels(city, '', '')
-
-        # 智能筛选
-        filtered_hotels = []
-        for hotel in hotels:
-            # 根据需求筛选
-            if requirements:
-                # 模拟设施匹配
-                hotel['matched_requirements'] = []
-                for req in requirements:
-                    if req in ['停车场', 'WiFi', '早餐']:  # 假设这些酒店都有
-                        hotel['matched_requirements'].append(req)
-
-                # 计算匹配度
-                hotel['match_score'] = len(hotel['matched_requirements']) / len(requirements)
-
-                # 只保留匹配度>50%的
-                if hotel['match_score'] >= 0.5:
-                    filtered_hotels.append(hotel)
-            else:
-                filtered_hotels.append(hotel)
-
-            # 价格筛选
-            if price_range and filtered_hotels:
-                filtered_hotels = [
-                    h for h in filtered_hotels
-                    if price_range[0] <= h.get('price', 0) <= price_range[1]
-                ]
-
-        # 生成响应
-        content = f"""
-### 🏨 {city}酒店搜索结果
-
-**筛选条件：**
-- 设施要求：{', '.join(requirements) if requirements else '无特殊要求'}
-- 价格范围：{f'¥{price_range[0]}-{price_range[1]}' if price_range else '不限'}
-
-找到 {len(filtered_hotels)} 家符合条件的酒店：
-"""
-
-        # 为每个酒店添加详情查看功能标记
-        for i, hotel in enumerate(filtered_hotels[:5], 1):
-            hotel['has_details'] = True  # 标记支持查看详情
-            hotel['details_available'] = True
-
-            match_info = ""
-            if 'match_score' in hotel:
-                match_info = f" | 匹配度：{hotel['match_score']:.0%}"
-
-            content += f"""
-**{i}. {hotel['name']}**
-- 💰 价格：¥{hotel['price']}/晚
-- 📍 位置：{hotel.get('location', hotel.get('address', ''))}
-- ⭐ 评分：{hotel.get('rating', 'N/A')}
-- ✅ 满足需求：{', '.join(hotel.get('matched_requirements', []))} {match_info}
-- 🔍 支持查看详情
-"""
-
-        return {
-            'action': 'search_hotels',
-            'content': content,
-            'data': filtered_hotels,
-            'suggestions': [
-                "点击酒店可查看详细信息",
-                "可以调整筛选条件获得更多选择",
-                "建议提前预订以获得优惠"
-            ],
-            'requires_confirmation': False
-        }
-
-    def handle_ticket_search(self, entities: Dict) -> Dict:
-        """门票查询处理"""
-        attraction = entities.get('attraction', '景点')
-
-        # 模拟获取门票信息
-        ticket_info = self._get_ticket_info(attraction)
-
-        content = f"""
-### 🎫 {attraction}门票信息
-
-**基础信息：**
-- 📍 地址：{ticket_info['address']}
-- ⏰ 开放时间：{ticket_info['opening_hours']}
-- 📞 咨询电话：{ticket_info['phone']}
-
-**票价信息：**
-"""
-
-        for ticket_type, price in ticket_info['prices'].items():
-            content += f"- {ticket_type}：¥{price}\n"
-
-        content += f"""
-**优惠政策：**
-{ticket_info['discounts']}
-
-**预订建议：**
-{ticket_info['booking_tips']}
-
-**游玩建议：**
-- 建议游玩时长：{ticket_info['suggested_duration']}
-- 最佳游玩时间：{ticket_info['best_time']}
-"""
-
-        return {
-            'action': 'ticket_info',
-            'content': content,
-            'data': ticket_info,
-            'suggestions': [
-                "建议提前在线购票享受优惠",
-                "避开周末和节假日人流高峰",
-                "可以购买联票更划算"
-            ],
-            'requires_confirmation': False
-        }
-
-    # ==================== 辅助方法 ====================
-
-    def _get_ticket_info(self, attraction: str) -> Dict:
-        """获取门票信息（模拟数据）"""
-        # 这里应该调用真实的API
-        mock_data = {
-            '迪士尼': {
-                'address': '上海市浦东新区川沙镇',
-                'opening_hours': '9:00-21:00',
-                'phone': '400-180-0000',
-                'prices': {
-                    '成人票（平日）': 435,
-                    '成人票（高峰日）': 599,
-                    '儿童/老人票（平日）': 325,
-                    '儿童/老人票（高峰日）': 449
-                },
-                'discounts': '1.0米以下儿童免费；65岁以上老人8折',
-                'booking_tips': '建议提前3天在官网预订，可享95折优惠',
-                'suggested_duration': '1-2天',
-                'best_time': '春秋季节，避开暑假和节假日'
-            },
-            '海洋公园': {
-                'address': '香港岛南部',
-                'opening_hours': '10:00-18:00',
-                'phone': '+852-3923-2323',
-                'prices': {
-                    '成人票': 498,
-                    '儿童票(3-11岁)': 249,
-                    '长者票(65岁+)': 100
-                },
-                'discounts': '香港居民享7折；生日当天免费入园',
-                'booking_tips': 'Klook平台预订可享85折',
-                'suggested_duration': '5-6小时',
-                'best_time': '10-11月或3-5月，天气舒适'
-            }
-        }
-
-        # 默认数据
-        default = {
-            'address': '景点地址',
-            'opening_hours': '9:00-18:00',
-            'phone': '000-0000-0000',
-            'prices': {
-                '成人票': 100,
-                '儿童票': 50,
-                '学生票': 80
-            },
-            'discounts': '儿童、老人、学生享受优惠',
-            'booking_tips': '建议提前预订',
-            'suggested_duration': '3-4小时',
-            'best_time': '春秋季节'
-        }
-
-        return mock_data.get(attraction, default)
-
-    def _extract_city(self, message: str) -> str:
-        """提取城市名称"""
-        cities = ['北京', '上海', '广州', '深圳', '杭州', '成都', '西安', '南京']
-        for city in cities:
-            if city in message:
-                return city
-        return '北京'  # 默认
-
-    def _get_route_info(self, origin: str, destination: str) -> Dict:
-        """获取路线信息"""
-        # 这里应该调用真实的地图API
-        return {
-            'distance': '25km',
-            'duration': '35分钟',
-            'traffic_status': '畅通'
-        }
-
-    def _generate_full_itinerary(self, destination: str, days: int, budget: float) -> TravelPlan:
-        """生成完整行程"""
-        # 这里应该使用AI生成详细行程
-        return TravelPlan(
-            destination=destination,
-            start_date='待定',
-            end_date='待定',
-            total_budget=budget,
-            daily_plans=[],
-            hotels=[],
-            flights=[],
-            estimated_cost=budget * 0.9,
-            recommendations=[]
-        )
-
-    def _recommend_hotels_for_plan(self, destination: str, daily_budget: float) -> List[Dict]:
-        """为行程推荐酒店"""
-        return self.tools.search_hotels(destination, '', '')[:3]
-
-    def _recommend_flights_for_plan(self, destination: str) -> List[Dict]:
-        """为行程推荐航班"""
-        return []  # 简化处理
-
-    def _get_top_attractions(self, destination: str) -> List[Dict]:
-        """获取热门景点"""
-        return self.tools.search_attractions(destination)[:5]
-
-    def _extract_planning_entities(self, message: str) -> Dict:
-        """提取行程规划实体"""
-        import re
-        entities = {
-            'destination': self._extract_city(message),
-            'days': 3,  # 默认3天
-            'budget': 3000  # 默认预算
-        }
-
-        # 提取天数
-        days_match = re.search(r'(\d+)[天日]', message)
-        if days_match:
-            entities['days'] = int(days_match.group(1))
-
-        # 提取预算
-        budget_match = re.search(r'预算(\d+)', message)
-        if budget_match:
-            entities['budget'] = int(budget_match.group(1))
-
-        return entities
-
-    def _extract_attraction_name(self, message: str) -> str:
-        """提取景点名称"""
-        attractions = ['迪士尼', '海洋公园', '故宫', '长城', '外滩']
-        for attr in attractions:
-            if attr in message:
-                return attr
-        return '景点'
-
-    def _extract_flight_info(self, message: str) -> Dict:
-        """提取航班信息"""
-        import re
-        entities = {}
-
-        # 提取起止城市
-        pattern = r'从(.+?)飞?[到往至](.+?)(?:[的，。]|$)'
-        match = re.search(pattern, message)
-        if match:
-            entities['origin'] = match.group(1).strip()
-            entities['destination'] = match.group(2).strip()
-
-        # 提取日期
-        date_match = re.search(r'(\d{1,2}月\d{1,2}[日号])', message)
-        if date_match:
-            entities['date'] = date_match.group(1)
-
-        return entities
-
-    def handle_flight_enhanced(self, entities: Dict) -> Dict:
-        """增强版航班搜索"""
-        origin = entities.get('origin', '北京')
-        destination = entities.get('destination', '上海')
-        date = entities.get('date', '待定')
-
-        # 获取航班数据
-        flights = self.tools.search_flights(origin, destination, date)
-
-        # 确保数据格式正确
-        for flight in flights:
-            # 添加必要字段
-            flight['departure_iata'] = flight.get('departure_iata', origin[:3].upper())
-            flight['arrival_iata'] = flight.get('arrival_iata', destination[:3].upper())
-            flight['carrier_code'] = flight.get('carrier_code', flight.get('airline', 'XX')[:2])
-            flight['flight_number'] = flight.get('flight_number', flight.get('flight_no', '000'))
-            flight['total_price'] = flight.get('total_price', flight.get('price', 0))
-            flight['duration'] = flight.get('duration', '2h 30m')
-            flight['cabin_class'] = flight.get('cabin_class', 'ECONOMY')
-            flight['currency'] = 'CNY'
-
-        content = f"""
-### ✈️ {origin} → {destination} 航班查询
-
-日期：{date}
-找到 {len(flights)} 个航班：
-"""
-
-        for i, flight in enumerate(flights[:5], 1):
-            content += f"""
-**{i}. {flight['carrier_code']}{flight['flight_number']}**
-- 时间：{flight.get('departure', 'N/A')} → {flight.get('arrival', 'N/A')}
-- 时长：{flight['duration']}
-- 价格：¥{flight['total_price']}
-- 舱位：{flight['cabin_class']}
-"""
-
-        return {
-            'action': 'search_flights',
-            'content': content,
-            'data': flights,
-            'suggestions': [
-                "建议提前预订获得优惠",
-                "可以比较不同时间的票价",
-                "注意查看行李额度"
-            ],
-            'requires_confirmation': False
-        }
-
-    def handle_original_intents(self, intent: IntentType, entities: Dict) -> Dict:
-        """处理其他原有意图"""
-        # 这里调用原有的处理方法
-        if intent == IntentType.WEATHER:
-            return self.handle_weather(entities)
-        elif intent == IntentType.ATTRACTION:
-            return self.handle_attractions(entities)
-        elif intent == IntentType.RESTAURANT:
-            return self.handle_restaurants(entities)
+        return hotels
+
+    def _generate_suggestions(self, context: str) -> List[str]:
+        """生成相关建议"""
+        suggestions = []
+
+        if "酒店" in context or "住" in context:
+            suggestions.extend(["查看更多酒店选项", "了解酒店位置", "查看用户评价"])
+        elif "航班" in context or "机票" in context:
+            suggestions.extend(["查看返程航班", "了解行李政策", "选择座位"])
+        elif "天气" in context:
+            suggestions.extend(["查看未来一周天气", "了解穿衣建议", "查看日出日落时间"])
         else:
-            return self.generate_general_response(entities)
+            suggestions.extend(["告诉我更多需求", "查看热门推荐", "开始规划行程"])
 
-    def handle_weather(self, entities: Dict) -> Dict:
-        """天气查询"""
-        city = entities.get('city', '北京')
-        weather = self.tools.get_weather(city)
+        return suggestions[:3]  # 只返回前3个建议
 
-        if weather.get('success'):
-            current = weather['current']
-            content = f"""
-### 🌤️ {city}天气
-
-**当前：**
-- 温度：{current['temperature']}°C
-- 天气：{current['weather']}
-- 湿度：{current['humidity']}%
-
-**建议：**
-- {'适合外出游玩' if int(current['temperature']) > 10 else '注意保暖'}
-"""
-            return {
-                'action': 'get_weather',
-                'content': content,
-                'data': weather,
-                'suggestions': [],
-                'requires_confirmation': False
-            }
-        return self.generate_error_response("无法获取天气信息")
-
-    def handle_attractions(self, entities: Dict) -> Dict:
-        """景点查询"""
-        city = entities.get('city', '北京')
-        attractions = self.tools.search_attractions(city)
-
-        content = f"### 🏛️ {city}景点推荐\n\n"
-        for i, attr in enumerate(attractions[:5], 1):
-            content += f"{i}. {attr['name']} - {attr.get('type', '景点')}\n"
-
-        return {
-            'action': 'search_attractions',
-            'content': content,
-            'data': attractions,
-            'suggestions': ["可以根据兴趣选择景点"],
-            'requires_confirmation': False
-        }
-
-    def handle_restaurants(self, entities: Dict) -> Dict:
-        """餐厅查询"""
-        city = entities.get('city', '北京')
-        restaurants = self.tools.search_restaurants(city)
-
-        content = f"### 🍴 {city}美食推荐\n\n"
-        for i, rest in enumerate(restaurants[:5], 1):
-            content += f"{i}. {rest['name']} - {rest.get('cuisine', '特色菜')}\n"
-
-        return {
-            'action': 'search_restaurants',
-            'content': content,
-            'data': restaurants,
-            'suggestions': ["建议提前预订热门餐厅"],
-            'requires_confirmation': False
-        }
-
-    def generate_general_response(self, entities: Dict) -> Dict:
-        """生成通用响应"""
-        return {
-            'action': 'suggestion',
-            'content': "我理解您的需求，让我为您提供相关信息...",
-            'data': None,
-            'suggestions': [
-                "可以告诉我更多细节",
-                "我可以帮您查询航班、酒店、景点等"
-            ],
-            'requires_confirmation': False
-        }
-
-    def generate_error_response(self, error_msg: str) -> Dict:
-        """生成错误响应"""
-        return {
-            'action': 'error',
-            'content': f"抱歉，处理时遇到问题：{error_msg}",
-            'data': None,
-            'suggestions': ["请重新描述您的需求"],
-            'requires_confirmation': False
-        }
-
-
-# ==================== 使用示例 ====================
-
-if __name__ == "__main__":
-    agent = TravelAgent()
-
-    # 测试用例
-    test_cases = [
-        "从机场到市区酒店的最快路线是什么？",
-        "我要预订北京朝阳区的酒店，需要有游泳池和健身房，预算2000元以内",
-        "查询迪士尼乐园的门票价格和开放时间",
-        "我想12月15-17日去杭州旅游，预算3000元，帮我规划整个行程，包括住宿、景点和交通",
-        "查询11月30日从香港飞往上海的航班"
-    ]
-
-    for query in test_cases:
-        print(f"\n{'='*60}")
-        print(f"测试: {query}")
-        result = agent.process(query)
-        print(f"响应类型: {result['action']}")
-        print(f"内容预览: {result['content'][:200]}...")
-        if result.get('suggestions'):
-            print(f"建议: {result['suggestions']}")
-        print(f"需要确认: {result.get('requires_confirmation', False)}")
+# 导出Agent类
+__all__ = ['TravelAgent']

@@ -1,264 +1,330 @@
-import streamlit as st
-from datetime import datetime
+"""
+改进版酒店卡片组件 - 蓝绿色主题
+特点：
+1. 蓝绿色配色方案
+2. 减少emoji使用
+3. 详情向下展开
+"""
 
-def display_flight_card(flight_data, key_prefix="flight"):
+import streamlit as st
+
+
+def display_hotel_card_v2(hotel, key_prefix="hotel", message_id=0):
     """
-    显示航班卡片（蓝色主题）
-    
+    改进版酒店卡片 - 蓝绿色主题
+
     参数:
-        flight_data (dict): 航班数据（对应数据库字段）
-        key_prefix (str): 按钮key前缀
-    
-    返回:
-        str: 用户操作 ("book", "details" 或 None)
+        hotel: 酒店数据
+        key_prefix: 按钮key前缀
+        message_id: 消息ID
     """
-    
-    # 清新蓝色主题 CSS
+
+    # 蓝绿色主题CSS
     st.markdown("""
     <style>
-    .flight-card {
-        border: 1px solid #bee3f8;
+    .hotel-card-v2 {
+        background: #ffffff;
+        border: 1px solid #b2dfdb;
         border-radius: 12px;
-        padding: 18px;
-        margin-bottom: 15px;
-        background: linear-gradient(to right, #e6fffa 0%, #ffffff 100%);
-        transition: all 0.3s;
+        padding: 20px;
+        margin-bottom: 16px;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0,150,136,0.1);
     }
-    .flight-card:hover {
-        box-shadow: 0 6px 12px rgba(72, 187, 120, 0.15);
+
+    .hotel-card-v2:hover {
+        box-shadow: 0 4px 12px rgba(0,150,136,0.2);
         transform: translateY(-2px);
     }
-    .flight-route {
-        font-size: 22px;
-        font-weight: bold;
-        color: #2c5282;
-        margin-bottom: 10px;
+
+    .hotel-header-v2 {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 16px;
     }
-    .flight-time {
-        font-size: 18px;
-        color: #2d3748;
+
+    .hotel-title-v2 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #004d40;
+        margin: 0;
+        line-height: 1.4;
+    }
+
+    .hotel-rating-v2 {
+        display: inline-flex;
+        align-items: center;
+        background: #e0f2f1;
+        color: #00695c;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 14px;
         font-weight: 600;
     }
-    .flight-duration {
-        color: #718096;
+
+    .hotel-location-v2 {
+        color: #00897b;
         font-size: 14px;
-        text-align: center;
+        margin: 8px 0;
+        font-weight: 500;
     }
-    .flight-info {
-        color: #4a5568;
+
+    .hotel-amenities-v2 {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0;
+    }
+
+    .amenity-tag-v2 {
+        background: #e0f2f1;
+        color: #00695c;
+        padding: 6px 12px;
+        border-radius: 6px;
         font-size: 13px;
+        font-weight: 500;
+    }
+
+    .hotel-price-section-v2 {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 16px;
+        border-top: 1px solid #e0f2f1;
+        margin-top: 16px;
+    }
+
+    .price-info-v2 {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .price-amount-v2 {
+        font-size: 28px;
+        font-weight: 700;
+        color: #00897b;
+        line-height: 1;
+    }
+
+    .price-unit-v2 {
+        font-size: 13px;
+        color: #00897b;
+        margin-top: 4px;
+    }
+
+    .hotel-details-section {
+        background: #f1f8f7;
+        border: 1px solid #b2dfdb;
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 12px;
+    }
+
+    .hotel-details-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #e0f2f1;
+    }
+
+    .hotel-details-row:last-child {
+        border-bottom: none;
+    }
+
+    .hotel-details-label {
+        color: #00897b;
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .hotel-details-value {
+        color: #004d40;
+        font-size: 13px;
+    }
+
+    .amenities-list {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
         margin-top: 8px;
     }
-    .flight-price {
-        font-size: 28px;
-        font-weight: bold;
-        color: #38a169;
-    }
-    .flight-cabin {
-        background: #c6f6d5;
-        color: #276749;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 600;
+
+    .amenity-item {
+        color: #00695c;
+        font-size: 13px;
+        padding: 4px 0;
     }
     </style>
     """, unsafe_allow_html=True)
-    
+
+    # 生成唯一的key
+    hotel_id = hotel.get('id', 0)
+    details_key = f"{key_prefix}_details_{message_id}_{hotel_id}"
+    book_key = f"{key_prefix}_book_{message_id}_{hotel_id}"
+
+    # 初始化详情展开状态
+    if details_key not in st.session_state:
+        st.session_state[details_key] = False
+
     with st.container():
-        st.markdown("<div class='flight-card'>", unsafe_allow_html=True)
-        
-        # 航班路线
-        departure_iata = flight_data.get('departure_iata', 'XXX')
-        arrival_iata = flight_data.get('arrival_iata', 'XXX')
-        st.markdown(f"<div class='flight-route'>✈️ {departure_iata} → {arrival_iata}</div>", unsafe_allow_html=True)
-        
-        # 时间信息
-        col1, col2, col3 = st.columns([2, 1, 2])
-        
-        with col1:
-            departure_time = flight_data.get('departure_time', 'N/A')
-            try:
-                dep_dt = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
-                dep_display = dep_dt.strftime("%H:%M")
-            except:
-                dep_display = departure_time
-            st.markdown(f"<div class='flight-time'>🛫 {dep_display}</div>", unsafe_allow_html=True)
-            st.caption(f"出发 · {departure_iata}")
-        
-        with col2:
-            duration = flight_data.get('duration', 'N/A')
-            st.markdown(f"<div class='flight-duration'>⏱️ {duration}</div>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align: center; color: #cbd5e0;'>━━━━━</div>", unsafe_allow_html=True)
-        
-        with col3:
-            arrival_time = flight_data.get('arrival_time', 'N/A')
-            try:
-                arr_dt = datetime.fromisoformat(arrival_time.replace('Z', '+00:00'))
-                arr_display = arr_dt.strftime("%H:%M")
-            except:
-                arr_display = arrival_time
-            st.markdown(f"<div class='flight-time'>🛬 {arr_display}</div>", unsafe_allow_html=True)
-            st.caption(f"到达 · {arrival_iata}")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # 航班详情
-        col_a, col_b, col_c = st.columns(3)
-        
-        with col_a:
-            carrier = flight_data.get('carrier_code', 'XX')
-            flight_num = flight_data.get('flight_number', '000')
-            st.markdown(f"<div class='flight-info'>🏷️ {carrier} {flight_num}</div>", unsafe_allow_html=True)
-            
-            aircraft = flight_data.get('aircraft_code', 'N/A')
-            st.markdown(f"<div class='flight-info'>🛩️ {aircraft}</div>", unsafe_allow_html=True)
-        
-        with col_b:
-            cabin_class = flight_data.get('cabin_class', 'ECONOMY')
-            cabin_display = {
-                'ECONOMY': '经济舱',
-                'PREMIUM_ECONOMY': '超经舱',
-                'BUSINESS': '商务舱',
-                'FIRST': '头等舱'
-            }.get(cabin_class, cabin_class)
-            
-            st.markdown(f"<span class='flight-cabin'>{cabin_display}</span>", unsafe_allow_html=True)
-            
-            # 预留amenities详情按钮空间
-            st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        
-        with col_c:
-            # 价格和货币
-            price = flight_data.get('total_price', 0)
-            currency = flight_data.get('currency', 'USD')
-            st.markdown(f"<div class='flight-price'>{currency} {price:.2f}</div>", unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # 操作按钮
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
-        
-        action = None
-        
-        with col_btn1:
-            if st.button("📋 查看详情", key=f"{key_prefix}_details", use_container_width=True):
-                action = "details"
-        
-        with col_btn2:
-            # 预留amenities按钮空间
-            seats = flight_data.get('number_of_bookable_seats', 0)
-            if seats > 0:
-                st.caption(f"剩余 {seats} 座")
-        
-        with col_btn3:
-            if st.button("💳 预订", key=f"{key_prefix}_book", type="primary", use_container_width=True):
-                action = "book"
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    return action
+        st.markdown("<div class='hotel-card-v2'>", unsafe_allow_html=True)
 
+        # 顶部：标题和评分
+        col_header, col_rating = st.columns([3, 1])
 
-def display_flight_details_modal(flight_data, amenities_data=None):
-    """
-    显示航班详细信息模态框（包含amenities）
-    
-    参数:
-        flight_data (dict): 航班数据
-        amenities_data (list): 便利设施列表 [{service: str, is_chargeable: bool}, ...]
-    """
-    
-    st.subheader("✈️ 航班详细信息")
-    
-    with st.container(border=True):
-        # 基本信息
-        st.markdown("#### 📌 基本信息")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write(f"**航班号**: {flight_data.get('carrier_code', 'XX')} {flight_data.get('flight_number', '000')}")
-            st.write(f"**机型**: {flight_data.get('aircraft_code', 'N/A')}")
-            st.write(f"**舱位**: {flight_data.get('cabin_class', 'N/A')}")
-        
-        with col2:
-            st.write(f"**运营商**: {flight_data.get('operating_carrier', 'N/A')}")
-            st.write(f"**可订座位**: {flight_data.get('number_of_bookable_seats', 0)}")
-            st.write(f"**出票截止**: {flight_data.get('last_ticketing_date', 'N/A')}")
-        
-        st.divider()
-        
-        # 行李信息
-        st.markdown("#### 🧳 行李额度")
-        col_a, col_b = st.columns(2)
-        
-        with col_a:
-            checked_bags = flight_data.get('included_checked_bags', 'N/A')
-            st.write(f"**托运行李**: {checked_bags}")
-        
-        with col_b:
-            cabin_bags = flight_data.get('included_cabin_bags', 'N/A')
-            st.write(f"**手提行李**: {cabin_bags}")
-        
-        st.divider()
-        
-        # 便利设施（amenities）
-        st.markdown("#### 🎁 附加服务")
-        
-        if amenities_data and len(amenities_data) > 0:
-            # 显示amenities表格
-            st.markdown("""
-            <style>
-            .amenity-table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            .amenity-table th {
-                background: #ebf8ff;
-                color: #2c5282;
-                padding: 10px;
-                text-align: left;
-                font-weight: 600;
-            }
-            .amenity-table td {
-                padding: 10px;
-                border-bottom: 1px solid #e2e8f0;
-            }
-            .amenity-free {
-                color: #38a169;
-                font-weight: 600;
-            }
-            .amenity-paid {
-                color: #dd6b20;
-                font-weight: 600;
-            }
-            </style>
+        with col_header:
+            st.markdown(f"<h3 class='hotel-title-v2'>{hotel.get('name', 'Unknown Hotel')}</h3>",
+                        unsafe_allow_html=True)
+
+        with col_rating:
+            rating = hotel.get('rating', 0)
+            st.markdown(f"<div class='hotel-rating-v2'>★ {rating}</div>",
+                        unsafe_allow_html=True)
+
+        # 位置信息
+        location = hotel.get('location', hotel.get('address', 'N/A'))
+        st.markdown(f"""
+            <div class='hotel-location-v2'>
+                位置: {location}
+            </div>
+        """, unsafe_allow_html=True)
+
+        # 设施标签（最多显示3个）
+        amenities = hotel.get('amenities', [])
+        if amenities:
+            amenities_html = "<div class='hotel-amenities-v2'>"
+            for amenity in amenities[:3]:
+                amenities_html += f"<span class='amenity-tag-v2'>{amenity}</span>"
+            if len(amenities) > 3:
+                amenities_html += f"<span class='amenity-tag-v2'>+{len(amenities) - 3}项设施</span>"
+            amenities_html += "</div>"
+            st.markdown(amenities_html, unsafe_allow_html=True)
+
+        # 底部：价格和操作按钮
+        st.markdown("<div class='hotel-price-section-v2'>", unsafe_allow_html=True)
+
+        col_price, col_btn1, col_btn2 = st.columns([2, 1, 1])
+
+        with col_price:
+            price = hotel.get('price', 0)
+            st.markdown(f"""
+                <div class='price-info-v2'>
+                    <div class='price-amount-v2'>¥{price}</div>
+                    <div class='price-unit-v2'>每晚</div>
+                </div>
             """, unsafe_allow_html=True)
-            
-            table_html = "<table class='amenity-table'><thead><tr><th>服务项目</th><th>费用</th></tr></thead><tbody>"
-            
-            for amenity in amenities_data:
-                service = amenity.get('service', 'N/A')
-                is_chargeable = amenity.get('is_chargeable', False)
-                
-                fee_class = "amenity-paid" if is_chargeable else "amenity-free"
-                fee_text = "收费" if is_chargeable else "免费"
-                
-                table_html += f"<tr><td>{service}</td><td class='{fee_class}'>{fee_text}</td></tr>"
-            
-            table_html += "</tbody></table>"
-            st.markdown(table_html, unsafe_allow_html=True)
-        else:
-            st.info("暂无附加服务信息")
-        
-        st.divider()
-        
-        # 价格明细
-        st.markdown("#### 💰 价格明细")
-        col_x, col_y = st.columns(2)
-        
-        with col_x:
-            st.write(f"**基础票价**: {flight_data.get('currency', 'USD')} {flight_data.get('base_price', 0):.2f}")
-        
-        with col_y:
-            st.write(f"**总价**: {flight_data.get('currency', 'USD')} {flight_data.get('grand_total', 0):.2f}")
+
+        with col_btn1:
+            # 展开/收起详情按钮
+            button_text = "收起详情" if st.session_state[details_key] else "查看详情"
+            if st.button(button_text,
+                         key=details_key + "_btn",
+                         use_container_width=True):
+                st.session_state[details_key] = not st.session_state[details_key]
+                st.rerun()
+
+        with col_btn2:
+            if st.button("预订",
+                         key=book_key,
+                         type="primary",
+                         use_container_width=True):
+                return "book"
+
+        st.markdown("</div>", unsafe_allow_html=True)  # price-section-v2
+
+        # 向下展开的详情区域
+        if st.session_state[details_key]:
+            st.markdown("<div class='hotel-details-section'>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color: #00695c; margin-bottom: 12px;'>酒店详情</h4>", unsafe_allow_html=True)
+
+            # 基本信息
+            details_html = f"""
+            <div class='hotel-details-row'>
+                <span class='hotel-details-label'>地址</span>
+                <span class='hotel-details-value'>{hotel.get('address', 'N/A')}</span>
+            </div>
+            <div class='hotel-details-row'>
+                <span class='hotel-details-label'>联系电话</span>
+                <span class='hotel-details-value'>{hotel.get('tel', 'N/A')}</span>
+            </div>
+            <div class='hotel-details-row'>
+                <span class='hotel-details-label'>评分</span>
+                <span class='hotel-details-value'>{hotel.get('rating', 'N/A')}/5.0</span>
+            </div>
+            """
+            st.markdown(details_html, unsafe_allow_html=True)
+
+            # 完整设施列表
+            if amenities:
+                st.markdown("<div class='hotel-details-row'>", unsafe_allow_html=True)
+                st.markdown("<span class='hotel-details-label'>设施服务</span>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                amenities_list_html = "<div class='amenities-list'>"
+                for amenity in amenities:
+                    amenities_list_html += f"<div class='amenity-item'>✓ {amenity}</div>"
+                amenities_list_html += "</div>"
+                st.markdown(amenities_list_html, unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)  # hotel-card-v2
+
+    return None
+
+
+def display_hotel_list_v2(hotels, message_id=0):
+    """
+    改进版酒店列表展示
+
+    参数:
+        hotels: 酒店列表
+        message_id: 消息ID
+    """
+    if not hotels:
+        st.info("未找到符合条件的酒店")
+        return
+
+    # 筛选器（简洁版）
+    with st.expander("筛选条件", expanded=False):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            max_price = st.number_input(
+                "最高价格（元/晚）",
+                min_value=0,
+                max_value=10000,
+                value=5000,
+                step=100,
+                key=f"hotel_filter_price_{message_id}"
+            )
+
+        with col2:
+            min_rating = st.slider(
+                "最低评分",
+                min_value=0.0,
+                max_value=5.0,
+                value=3.0,
+                step=0.5,
+                key=f"hotel_filter_rating_{message_id}"
+            )
+
+    # 筛选酒店
+    filtered_hotels = [
+        h for h in hotels
+        if h.get('price', 0) <= max_price and h.get('rating', 0) >= min_rating
+    ]
+
+    # 显示结果统计
+    st.markdown(f"""
+        <div style='background: #e0f2f1; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #b2dfdb;'>
+            <span style='color: #00695c; font-size: 14px;'>
+                找到 <strong style='color: #004d40;'>{len(filtered_hotels)}</strong> 家符合条件的酒店
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 显示酒店卡片
+    for hotel in filtered_hotels[:10]:  # 限制显示前10个
+        display_hotel_card_v2(hotel, key_prefix="hotel", message_id=message_id)
