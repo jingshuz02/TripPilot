@@ -1,11 +1,12 @@
 """
-TripPilot Chat Interface - 改进版
-新功能：
-1. 💰 统一预算管理(不是每个类型单独预算)
-2. 📊 实时显示剩余预算
-3. 🔄 优化刷新逻辑,避免需要点击两次
-4. 📱 自适应布局(侧边栏收起时)
-5. 🎯 智能预算分配建议
+TripPilot Chat Interface - Enhanced Version (Adaptive Layout + Booking Confirmation Dialog)
+New Features:
+1. 💰 Unified budget management (not separate budgets for each type)
+2. 📊 Real-time remaining budget display
+3. 🔄 Optimized refresh logic to avoid double-clicking
+4. 📱 Adaptive layout (content centers and expands when sidebar collapses) ✨ NEW
+5. 🎯 Intelligent budget allocation recommendations
+6. ✅ Booking confirmation dialog ✨ NEW - Shows detailed confirmation dialog after clicking booking
 """
 
 import streamlit as st
@@ -14,51 +15,65 @@ from datetime import datetime, timedelta
 import json
 import sys
 import os
+import base64
 
-# ✅ 修复路径：添加 frontend 目录到路径
+# ✅ Fix path: add frontend directory to path
 current_dir = os.path.dirname(__file__)  # frontend/pages/
 frontend_dir = os.path.abspath(os.path.join(current_dir, '..'))  # frontend/
 sys.path.insert(0, frontend_dir)
 
+# ✅ Logo path configuration
+icon_path = os.path.abspath(os.path.join(current_dir, "..", "images", "logo.jpg"))
+
 # ==================== Import Custom Components ====================
 try:
     from components.hotel_card import display_hotel_card_v2, display_hotel_list_v2
-    print("✅ 成功导入 hotel_card_v2 组件（带日期选择器）")
-except ImportError as e:  # ✅ 添加 as e
-    print(f"❌ 导入hotel组件失败: {e}")
+    print("✅ Successfully imported hotel_card_v2 component (with date picker)")
+except ImportError as e:
+    print(f"❌ Failed to import hotel component: {e}")
     display_hotel_list_v2 = None
     display_hotel_card_v2 = None
 
 try:
     from components.weather_widget import display_weather_enhanced
-
-    print("✅ 成功导入 天气组件（带日期选择器）")
-except ImportError as e:  # ✅ 添加 as e
-    print(f"❌ 导入天气组件失败: {e}")
+    print("✅ Successfully imported weather component (with date picker)")
+except ImportError as e:
+    print(f"❌ Failed to import weather component: {e}")
     display_weather_enhanced = None
 
 try:
     from components.flight_card import display_flight_card_v2, display_flight_list_v2
-
-    print("✅ 成功导入 机票组件（带日期选择器）")
-except ImportError as e:  # ✅ 添加 as e
-    print(f"❌ 导入机票组件失败: {e}")
+    print("✅ Successfully imported flight component (with date picker)")
+except ImportError as e:
+    print(f"❌ Failed to import flight component: {e}")
     display_flight_card_v2 = None
     display_flight_list_v2 = None
 
 # ==================== Page Configuration ====================
 st.set_page_config(
     page_title="TripPilot - Intelligent Travel Assistant",
-    page_icon="✈️",
-    layout="wide"
+    page_icon=icon_path if os.path.exists(icon_path) else "✈️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+
+# ==================== Helper Functions ====================
+def get_base64_image(image_path):
+    """Convert image to base64 encoding for display in Markdown"""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
+        print(f"Image encoding failed: {e}")
+        return ""  # Return empty on failure to avoid errors
 
 # ==================== Initialize Session State ====================
 def init_session_state():
     """Initialize all necessary session states"""
     from uuid import uuid4
 
-    # ========== Conversation Management (统一数据结构) ==========
+    # ========== Conversation Management (unified data structure) ==========
     if "conversations" not in st.session_state:
         default_conv_id = str(uuid4())[:8]
         st.session_state.conversations = {
@@ -74,12 +89,14 @@ def init_session_state():
                     "budget": 5000,
                     "start_date": datetime.now().date(),
                     "end_date": None
-                }
+                },
+                "orders": [],  # ✅ Add orders array
+                "total_spent": 0  # ✅ Add total spending
             }
         }
         st.session_state.current_conversation_id = default_conv_id
 
-    # ✅ 修复旧对话数据结构(向后兼容)
+    # ✅ Fix old conversation data structure (backward compatibility)
     for conv_id, conv in st.session_state.conversations.items():
         if "preferences" not in conv:
             conv["preferences"] = {
@@ -89,7 +106,13 @@ def init_session_state():
                 "start_date": conv.get("start_date", datetime.now().date()),
                 "end_date": conv.get("end_date", None)
             }
-        # 清理旧字段
+        # ✅ Ensure each conversation has orders and total_spent fields
+        if "orders" not in conv:
+            conv["orders"] = []
+        if "total_spent" not in conv:
+            conv["total_spent"] = 0
+
+        # Clean up old fields
         conv.pop("destination", None)
         conv.pop("start_date", None)
         conv.pop("end_date", None)
@@ -110,7 +133,7 @@ def init_session_state():
         if "current_trip" not in st.session_state:
             st.session_state.current_trip = current_conv["preferences"]
 
-    # ✅ 统一预算管理
+    # ✅ Unified budget management
     if "orders" not in st.session_state:
         st.session_state.orders = []
 
@@ -120,13 +143,21 @@ def init_session_state():
     if "conversation_id" not in st.session_state:
         st.session_state.conversation_id = st.session_state.current_conversation_id
 
-    # ✅ 添加处理状态,避免重复处理
+    # ✅ Add processing state to avoid duplicate processing
     if "processing" not in st.session_state:
         st.session_state.processing = False
 
-    # ✅ 添加最后一条消息ID,避免重复触发
+    # ✅ Add last message ID to avoid duplicate triggers
     if "last_message_id" not in st.session_state:
         st.session_state.last_message_id = None
+
+    # ✅ Add view state
+    if "current_view" not in st.session_state:
+        st.session_state.current_view = "chat"  # "chat" or "orders"
+
+    # ✅ Add booking data state
+    if "booking_data" not in st.session_state:
+        st.session_state.booking_data = None
 
 
 # ==================== Conversation Management Functions ====================
@@ -147,11 +178,10 @@ def create_new_conversation():
             "budget": 5000,
             "start_date": datetime.now().date(),
             "end_date": None
-        }
+        },
+        "orders": [],  # ✅ Add orders array
+        "total_spent": 0  # ✅ Add total spending
     }
-    # ✅ 重置预算
-    st.session_state.total_spent = 0
-    st.session_state.orders = []
 
     switch_conversation(new_conv_id)
     return new_conv_id
@@ -218,20 +248,21 @@ def save_message_to_conversation(role: str, content: str, **kwargs):
         update_conversation_timestamp()
 
 
-# ✅ 计算剩余预算的辅助函数
+# ✅ Helper function to calculate remaining budget
 def get_remaining_budget():
-    """获取当前剩余预算"""
+    """Get current remaining budget"""
     current_conv = get_current_conversation()
     if current_conv:
         total_budget = current_conv["preferences"].get("budget", 5000)
-        return total_budget - st.session_state.total_spent
+        total_spent = current_conv.get("total_spent", 0)
+        return total_budget - total_spent
     return 0
 
 
-# ✅ 获取预算建议
+# ✅ Get budget recommendations
 def get_budget_recommendations():
     """
-    根据行程天数和剩余预算,给出合理的预算分配建议
+    Give reasonable budget allocation recommendations based on trip days and remaining budget
     """
     current_conv = get_current_conversation()
     if not current_conv:
@@ -241,17 +272,17 @@ def get_budget_recommendations():
     days = current_conv["preferences"].get("days", 3)
     remaining = get_remaining_budget()
 
-    # 如果已经花费超过一半,给出警告
+    # If more than half spent, give warning
     if remaining < total_budget * 0.5:
         percent_used = ((total_budget - remaining) / total_budget) * 100
         return {
             "status": "warning",
-            "message": f"⚠️ 已使用{percent_used:.0f}%预算,请注意控制开支"
+            "message": f"⚠️ {percent_used:.0f}% of budget used, please control spending"
         }
 
-    # 建议预算分配(假设还没预订)
+    # Suggested budget allocation (assuming not yet booked)
     if st.session_state.total_spent < 100:
-        # 建议: 交通40%, 住宿30%, 其他30%
+        # Suggestion: Transportation 40%, Accommodation 30%, Other 30%
         suggested_flight = int(remaining * 0.4)
         suggested_hotel_total = int(remaining * 0.3)
         suggested_hotel_per_night = int(suggested_hotel_total / max(days - 1, 1))
@@ -259,20 +290,368 @@ def get_budget_recommendations():
 
         return {
             "status": "info",
-            "message": f"💡 建议预算分配",
+            "message": f"💡 Suggested Budget Allocation",
             "details": {
-                "flight": f"交通: ¥{suggested_flight:,} (40%)",
-                "hotel": f"住宿: ¥{suggested_hotel_per_night:,}/晚",
-                "other": f"餐饮娱乐: ¥{suggested_other:,}"
+                "flight": f"Transportation: ¥{suggested_flight:,} (40%)",
+                "hotel": f"Accommodation: ¥{suggested_hotel_per_night:,}/night",
+                "other": f"Dining & Entertainment: ¥{suggested_other:,}"
             }
         }
 
     return None
 
 
+# ==================== Booking Confirmation Dialog ✨ NEW ====================
+@st.dialog("✅ Booking Confirmation", width="large")
+def booking_confirmation_dialog(order_type: str, item: dict, price: float):
+    """
+    Booking confirmation dialog
+
+    Parameters:
+        order_type: Order type (flight/hotel)
+        item: Item details
+        price: Price
+    """
+
+    # Booking info card style
+    st.markdown("""
+    <style>
+    .booking-card {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        padding: 25px;
+        border-radius: 15px;
+        color: white;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .booking-title {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
+    .booking-price {
+        font-size: 36px;
+        font-weight: bold;
+        margin: 15px 0;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+    .detail-item {
+        background: rgba(255,255,255,0.1);
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin: 8px 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Display different icons and names based on type
+    icon_map = {
+        "flight": "✈️",
+        "hotel": "🏨"
+    }
+    type_name_map = {
+        "flight": "Flight",
+        "hotel": "Hotel"
+    }
+    icon = icon_map.get(order_type, "📦")
+    type_name = type_name_map.get(order_type, "Service")
+
+    # Get item name
+    item_name = item.get('name', item.get('carrier_name', 'Unknown'))
+
+    # Special handling for multiple hotel nights
+    if order_type == 'hotel' and 'nights' in item:
+        nights = item['nights']
+        price_per_night = item.get('price', 0)
+        display_name = f"{item_name} ({nights} nights @ ¥{price_per_night:,}/night)"
+    else:
+        display_name = item_name
+
+    st.markdown(f"""
+    <div class='booking-card'>
+        <div class='booking-title'>{icon} {display_name}</div>
+        <div style='font-size: 16px; opacity: 0.9;'>Booking Type: {type_name}</div>
+        <div class='booking-price'>💰 ¥{price:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Build detailed information
+    details = {}
+
+    if order_type == "flight":
+        details = {
+            "Airline": item.get('carrier_name', 'N/A'),
+            "Flight Number": item.get('flight_number', 'N/A'),
+            "Origin": item.get('origin', 'N/A'),
+            "Destination": item.get('destination', 'N/A'),
+            "Departure Time": item.get('departure_time', 'N/A'),
+            "Arrival Time": item.get('arrival_time', 'N/A'),
+            "Flight Duration": item.get('duration', 'N/A'),
+            "Cabin Class": item.get('cabin_class', 'N/A')
+        }
+    elif order_type == "hotel":
+        details = {
+            "Hotel Name": item.get('name', 'N/A'),
+            "Location": item.get('location', 'N/A'),
+            "Address": item.get('address', 'N/A'),
+            "Rating": f"{'⭐' * int(item.get('rating', 0))} ({item.get('rating', 0)})",
+            "Amenities": ', '.join(item.get('amenities', [])) if item.get('amenities') else 'N/A'
+        }
+
+        if 'nights' in item:
+            details["Nights"] = f"{item['nights']} nights"
+            details["Price/Night"] = f"¥{item.get('price', 0):,}"
+
+    # Display detailed information
+    st.subheader("📋 Booking Details")
+
+    col1, col2 = st.columns(2)
+    items = list(details.items())
+    mid = len(items) // 2 + len(items) % 2  # Round up
+
+    with col1:
+        for key, value in items[:mid]:
+            st.markdown(f"""
+            <div class='detail-item'>
+                <strong>{key}</strong>: {value}
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col2:
+        for key, value in items[mid:]:
+            st.markdown(f"""
+            <div class='detail-item'>
+                <strong>{key}</strong>: {value}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Budget check
+    total_budget = get_current_conversation()["preferences"].get("budget", 5000)
+    remaining = get_remaining_budget()
+
+    col_budget1, col_budget2, col_budget3 = st.columns(3)
+    with col_budget1:
+        st.metric("Total Budget", f"¥{total_budget:,.0f}")
+    with col_budget2:
+        st.metric("Used", f"¥{st.session_state.total_spent:,.0f}")
+    with col_budget3:
+        st.metric("Remaining Budget", f"¥{remaining:,.0f}")
+
+    # Budget warning
+    if price > remaining:
+        st.error(f"❌ Insufficient budget! Need ¥{price:,.0f}, Remaining ¥{remaining:,.0f}")
+        st.info("💡 Tip: You can adjust budget in the sidebar, or choose a lower-priced option.")
+        if st.button("Close", type="secondary", use_container_width=True):
+            st.session_state.booking_data = None
+            st.rerun()
+        return
+    elif price > remaining * 0.8:
+        st.warning(f"⚠️ This booking will use over 80% of remaining budget (Remaining ¥{remaining - price:,.0f})")
+
+    st.divider()
+
+    # Guest information form
+    st.subheader("👤 Guest Information")
+
+    with st.form("booking_form", clear_on_submit=False):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            name = st.text_input(
+                "Name *",
+                placeholder="Please enter full name",
+                help="Use name as shown on ID"
+            )
+            phone = st.text_input(
+                "Phone *",
+                placeholder="13800138000",
+                help="For receiving booking confirmation"
+            )
+
+        with col2:
+            email = st.text_input(
+                "Email *",
+                placeholder="example@email.com",
+                help="Booking voucher will be sent to this email"
+            )
+            id_number = st.text_input(
+                "ID Number *",
+                placeholder="ID/Passport Number",
+                help="Required for check-in/boarding procedures"
+            )
+
+        # Special requests
+        if order_type == "flight":
+            special_requests = st.multiselect(
+                "Special Requests (Optional)",
+                ["Wheelchair Service", "Special Meal", "Infant Bassinet", "Priority Boarding"],
+                help="Select any special services needed"
+            )
+        elif order_type == "hotel":
+            special_requests = st.multiselect(
+                "Special Requests (Optional)",
+                ["High Floor", "Non-Smoking Room", "Extra Bed", "Baby Cot", "Early Check-in", "Late Check-out"],
+                help="Select your room preferences"
+            )
+        else:
+            special_requests = []
+
+        notes = st.text_area(
+            "Other Notes (Optional)",
+            placeholder="Any other special requests or notes",
+            height=100
+        )
+
+        st.divider()
+
+        # Terms of service
+        agree = st.checkbox(
+            "I have read and agree to the Terms of Service and Booking Policy",
+            help="Check to agree to terms"
+        )
+
+        st.caption("📌 Note: Booking cannot be cancelled or modified after confirmation. Please verify all information before submitting.")
+
+        st.divider()
+
+        # Buttons
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            submit = st.form_submit_button(
+                "✅ Confirm Booking",
+                type="primary",
+                use_container_width=True
+            )
+
+        with col_btn2:
+            cancel = st.form_submit_button(
+                "❌ Cancel",
+                use_container_width=True
+            )
+
+        # Handle submission
+        if submit:
+            # Validate required fields
+            if not all([name, phone, email, id_number]):
+                st.error("❌ Please fill in all required fields (marked with *)")
+            elif not agree:
+                st.error("❌ Please agree to the Terms of Service first")
+            else:
+                # Simple validation
+                if len(phone) < 11:
+                    st.error("❌ Please enter a valid phone number")
+                elif "@" not in email or "." not in email:
+                    st.error("❌ Please enter a valid email address")
+                else:
+                    # Execute actual booking
+                    from uuid import uuid4
+
+                    order_id = f"ORD{uuid4().hex[:8].upper()}"
+                    order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    # Build order details
+                    item_details = {}
+                    if order_type == "flight":
+                        item_details = {
+                            "carrier_name": item.get('carrier_name', 'N/A'),
+                            "flight_number": item.get('flight_number', 'N/A'),
+                            "origin": item.get('origin', 'N/A'),
+                            "destination": item.get('destination', 'N/A'),
+                            "departure_time": item.get('departure_time', 'N/A'),
+                            "arrival_time": item.get('arrival_time', 'N/A'),
+                            "duration": item.get('duration', 'N/A'),
+                            "cabin_class": item.get('cabin_class', 'N/A')
+                        }
+                    elif order_type == "hotel":
+                        item_details = {
+                            "name": item.get('name', 'N/A'),
+                            "location": item.get('location', 'N/A'),
+                            "address": item.get('address', 'N/A'),
+                            "rating": item.get('rating', 0),
+                            "amenities": item.get('amenities', []),
+                            "price": item.get('price', 0),  # Price per night
+                            "nights": item.get('nights', 1),
+                            "checkin_date": item.get('checkin_date', ''),
+                            "checkout_date": item.get('checkout_date', '')
+                        }
+
+                    # Add order
+                    order = {
+                        "id": order_id,
+                        "type": order_type,
+                        "item_name": item_name,  # Add display name
+                        "item": item,
+                        "item_details": item_details,  # Add detailed info
+                        "price": price,
+                        "created_at": order_time,
+                        "customer_name": name,
+                        "customer_phone": phone,
+                        "customer_email": email,
+                        "customer_id": id_number,
+                        "special_requests": special_requests if special_requests else [],
+                        "notes": notes,
+                        "status": "Paid"  # Changed to Paid
+                    }
+
+                    # ✅ Save to current conversation's orders
+                    current_conv = get_current_conversation()
+                    if current_conv:
+                        if "orders" not in current_conv:
+                            current_conv["orders"] = []
+                        current_conv["orders"].append(order)
+
+                        # Update conversation's total_spent
+                        current_conv["total_spent"] = current_conv.get("total_spent", 0) + price
+
+                    # Also update global orders and total_spent (backward compatibility)
+                    if "orders" not in st.session_state:
+                        st.session_state.orders = []
+                    st.session_state.orders.append(order)
+                    st.session_state.total_spent = st.session_state.get("total_spent", 0) + price
+
+                    new_remaining = get_remaining_budget()
+
+                    # Show success message
+                    st.success(f"✅ Booking Successful!")
+                    st.info(f"""
+                    **Order Information**
+                    - Order Number: `{order_id}`
+                    - Booking Time: {order_time}
+                    - Guest Name: {name}
+                    - Contact: {phone}
+                    - Amount Charged: ¥{price:,.0f}
+                    - Remaining Budget: ¥{new_remaining:,.0f}
+                    
+                    Booking confirmation has been sent to {email}
+                    """)
+
+                    st.balloons()
+
+                    # Clear booking data
+                    st.session_state.booking_data = None
+
+                    # Add confirmation message to chat
+                    save_message_to_conversation(
+                        "assistant",
+                        f"🎉 Congratulations! Your {type_name} booking is confirmed!\n\nOrder Number: **{order_id}**\nBooking Item: {item_name}\nAmount: ¥{price:.2f}\n\nYou can view order details in the sidebar."
+                    )
+
+                    # Delay before closing
+                    import time
+                    time.sleep(2)
+                    st.rerun()
+
+        if cancel:
+            st.session_state.booking_data = None
+            st.rerun()
+
+
 init_session_state()
 
-# ==================== Style Definition - Light Green Theme ====================
+# ==================== Style Definition - Light Green Theme with Responsive Layout ====================
 st.markdown("""
 <style>
     /* Overall Background */
@@ -319,13 +698,13 @@ st.markdown("""
     .ai-message ul { margin: 0.5rem 0; padding-left: 1.5rem; }
     .ai-message li { margin: 0.3rem 0; line-height: 1.6; }
     
-    /* ✅ 改进侧边栏样式 - 支持自适应 */
+    /* ✅ Improved sidebar style - supports adaptive */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #6ee7b7 0%, #a7f3d0 100%);
         transition: all 0.3s ease;
     }
     
-    /* 侧边栏展开状态 */
+    /* Sidebar expanded state */
     [data-testid="stSidebar"][aria-expanded="true"] {
         min-width: 350px !important;
         max-width: 500px !important;
@@ -335,28 +714,42 @@ st.markdown("""
         width: 350px !important;
     }
     
-    /* 侧边栏收起状态 */
+    /* Sidebar collapsed state */
     [data-testid="stSidebar"][aria-expanded="false"] {
         min-width: 0 !important;
         max-width: 0 !important;
     }
     
-    /* ✅ 主内容区域自适应 */
+    /* ✅✨ Main content area adaptive - key improvement: supports centered layout */
     .main .block-container {
-        padding-left: 1rem;
-        padding-right: 1rem;
-        max-width: 100%;
+        padding-left: 2rem;
+        padding-right: 2rem;
         transition: all 0.3s ease;
     }
     
-    /* 侧边栏展开时主内容区域 */
-    [data-testid="stSidebar"][aria-expanded="true"] ~ .main .block-container {
-        margin-left: 0;
+    /* When sidebar expanded - limit max width to maintain readability */
+    section[data-testid="stSidebar"][aria-expanded="true"] ~ .main .block-container {
+        max-width: 1200px;
+        margin-left: auto;
+        margin-right: auto;
     }
     
-    /* 侧边栏收起时主内容区域自动扩展 */
-    [data-testid="stSidebar"][aria-expanded="false"] ~ .main .block-container {
-        margin-left: 0;
+    /* ✨ When sidebar collapsed - expand and center */
+    section[data-testid="stSidebar"][aria-expanded="false"] ~ .main .block-container {
+        max-width: 1400px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
+    
+    /* ✅ Ensure main content container takes full width */
+    .main {
+        width: 100%;
+    }
+    
+    /* ✅ Message container adaptive width */
+    .stChatMessage {
         max-width: 100%;
     }
     
@@ -516,7 +909,7 @@ def call_backend_api(message: str) -> dict:
                 "days": max(1, trip.get("days", 3)),
                 "start_date": str(trip.get("start_date", datetime.now().date())),
                 "end_date": str(trip.get("end_date", "")),
-                # ✅ 添加剩余预算信息
+                # ✅ Add remaining budget info
                 "remaining_budget": get_remaining_budget()
             },
             "conversation_history": st.session_state.messages[-10:] if st.session_state.messages else []
@@ -604,7 +997,7 @@ def display_ai_message(message: dict, msg_idx: int = 0):
 def display_hotels(hotels: list, msg_idx: int):
     """Display hotel list with unified budget"""
     if display_hotel_list_v2:
-        # ✅ 传递预算信息和预订回调
+        # ✅ hotel_card takes 2 parameters (hotel, price), we need to convert to 3 parameters (order_type, item, price)
         display_hotel_list_v2(
             hotels,
             message_id=msg_idx,
@@ -619,7 +1012,7 @@ def _display_hotels_fallback(hotels: list, msg_idx: int):
     st.subheader("🏨 Recommended Hotels")
 
     remaining = get_remaining_budget()
-    st.info(f"💰 剩余预算: ¥{remaining:,.0f}")
+    st.info(f"💰 Remaining Budget: ¥{remaining:,.0f}")
 
     for idx, hotel in enumerate(hotels):
         price = hotel.get('price', 0)
@@ -633,9 +1026,9 @@ def _display_hotels_fallback(hotels: list, msg_idx: int):
             with col2:
                 st.metric("Price", f"¥{price}/night")
 
-                # ✅ 检查预算
+                # ✅ Check budget
                 if price > remaining:
-                    st.error("💰 预算不足")
+                    st.error("💰 Insufficient Budget")
                 else:
                     if st.button(f"Book", key=f"book_hotel_{msg_idx}_{idx}"):
                         handle_booking("hotel", hotel, price)
@@ -644,11 +1037,11 @@ def _display_hotels_fallback(hotels: list, msg_idx: int):
 def display_flights(flights: list, msg_idx: int):
     """Display flight list with unified budget"""
     if display_flight_list_v2:
-        # ✅ 传递消息ID和预订回调
+        # ✅ Pass message ID and booking callback - accepts 3 parameters (order_type, item, price)
         display_flight_list_v2(
             flights,
             message_id=msg_idx,
-            on_book_callback=lambda flight, price: handle_booking("flight", flight, price)
+            on_book_callback=handle_booking  # Pass function directly, it accepts 3 parameters
         )
     else:
         _display_flights_fallback(flights, msg_idx)
@@ -659,7 +1052,7 @@ def _display_flights_fallback(flights: list, msg_idx: int):
     st.subheader("✈️ Recommended Flights")
 
     remaining = get_remaining_budget()
-    st.info(f"💰 剩余预算: ¥{remaining:,.0f}")
+    st.info(f"💰 Remaining Budget: ¥{remaining:,.0f}")
 
     for idx, flight in enumerate(flights):
         price = flight.get('price', 0)
@@ -678,53 +1071,37 @@ def _display_flights_fallback(flights: list, msg_idx: int):
                 st.write(f"**Duration:** {flight.get('duration', 'N/A')}")
                 st.write(f"**Class:** {flight.get('cabin_class', 'N/A')}")
 
-            # ✅ 检查预算
+            # ✅ Check budget
             if price > remaining:
-                st.error("💰 预算不足")
+                st.error("💰 Insufficient Budget")
             else:
                 if st.button(f"Book", key=f"book_flight_{msg_idx}_{idx}"):
                     handle_booking("flight", flight, price)
 
 
 def display_weather(weather: dict):
-    """Display weather information - 修复版"""
-
-    # 1. 安全提取数据 (解决之前的 AttributeError 问题)
-    # 如果 weather 里面还有一层 "weather" 字典，则剥离出来
-    if isinstance(weather.get("weather"), dict):
-        weather_data = weather["weather"]
-    else:
-        weather_data = weather
-
-    # 2. 检查是否成功导入了增强组件
+    """Display weather information"""
     if display_weather_enhanced:
-        # 格式化数据以匹配 weather_widget.py 的要求
         formatted_weather = {
-            "location": weather_data.get("location", weather_data.get("city", "")),
-            "temperature": weather_data.get("temperature", 0),
-            "feels_like": weather_data.get("feels_like", 0),
-            # 确保 weather 是字符串描述，不是字典
-            "weather": weather_data.get("weather") if isinstance(weather_data.get("weather"),
-                                                                 str) else weather_data.get("description", ""),
-            "description": weather_data.get("description", ""),
-            "humidity": weather_data.get("humidity", 0),
-            "wind_speed": weather_data.get("wind_speed", ""),
-            "wind_direction": weather_data.get("wind_direction", ""),
-            "visibility": weather_data.get("visibility", ""),
-            "uv_index": weather_data.get("uv_index", 0),
-            "sunrise": weather_data.get("sunrise", ""),
-            "sunset": weather_data.get("sunset", ""),
-            # 关键：确保 forecast 列表被正确传递
-            "forecast": weather_data.get("forecast", [])
+            "location": weather.get("location", weather.get("city", "")),
+            "temperature": weather.get("temperature", 0),
+            "feels_like": weather.get("feels_like", 0),
+            "weather": weather.get("weather", ""),
+            "description": weather.get("description", ""),
+            "humidity": weather.get("humidity", 0),
+            "wind_speed": weather.get("wind_speed", ""),
+            "wind_direction": weather.get("wind_direction", ""),
+            "visibility": weather.get("visibility", ""),
+            "pressure": weather.get("pressure", ""),
+            "uv_index": weather.get("uv_index", 0),
+            "sunrise": weather.get("sunrise", ""),
+            "sunset": weather.get("sunset", ""),
+            "update_time": weather.get("update_time", ""),
+            "forecast": weather.get("forecast", [])
         }
-
-        # 调用增强组件 (会显示绿色卡片和未来天气)
         display_weather_enhanced(formatted_weather)
-
     else:
-        # 如果导入失败，才会显示你截图中的简单样式
-        st.warning("Weather component not found, using fallback display.")
-        _display_weather_fallback(weather_data)
+        _display_weather_fallback(weather)
 
 
 def _display_weather_fallback(weather: dict):
@@ -757,76 +1134,239 @@ def display_suggestions(suggestions: list, msg_idx: int = 0):
                 st.rerun()
 
 
-# ✅ 改进的统一预订处理函数
+# ==================== Orders View ====================
+def display_orders_view():
+    """Display order management view"""
+
+    # Back to chat button
+    col_nav1, col_nav2 = st.columns([1, 5])
+    with col_nav1:
+        if st.button("← Back to Chat", use_container_width=True):
+            st.session_state.current_view = "chat"
+            st.rerun()
+
+    st.title("📋 Order Management")
+
+    current_conv = get_current_conversation()
+    if not current_conv:
+        st.error("❌ Current conversation not found")
+        return
+
+    # Show current conversation name
+    st.info(f"📍 Current Conversation: **{current_conv['name']}**")
+
+    # Get order data
+    orders = current_conv.get("orders", [])
+    total_spent = current_conv.get("total_spent", 0)
+    total_budget = current_conv["preferences"].get("budget", 5000)
+    remaining = total_budget - total_spent
+
+    # Top summary card
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+        <h3 style='margin: 0 0 16px 0;'>💰 Budget Overview</h3>
+        <div style='display: flex; justify-content: space-between; padding: 8px 0;'>
+            <span>Total Budget</span>
+            <span style='font-size: 20px; font-weight: 700;'>¥{total_budget:,.0f}</span>
+        </div>
+        <div style='display: flex; justify-content: space-between; padding: 8px 0;'>
+            <span>Spent</span>
+            <span style='font-size: 20px; font-weight: 700;'>¥{total_spent:,.0f}</span>
+        </div>
+        <div style='display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.3);'>
+            <span>Remaining Budget</span>
+            <span style='font-size: 24px; font-weight: 700;'>¥{remaining:,.0f}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Statistics cards
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("📦 Total Orders", len(orders))
+    with col2:
+        hotel_orders = [o for o in orders if o.get("type") == "hotel"]
+        st.metric("🏨 Hotel Orders", len(hotel_orders))
+    with col3:
+        flight_orders = [o for o in orders if o.get("type") == "flight"]
+        st.metric("✈️ Flight Orders", len(flight_orders))
+    with col4:
+        usage_percent = (total_spent / total_budget * 100) if total_budget > 0 else 0
+        st.metric("📊 Budget Usage", f"{usage_percent:.1f}%")
+
+    # Budget progress bar
+    if total_budget > 0:
+        progress = min(total_spent / total_budget, 1.0)
+        st.progress(progress)
+
+    st.divider()
+
+    # Order list
+    if not orders:
+        st.info("📝 No orders yet")
+        st.markdown("""
+        ### 💡 Tips
+        - Search for hotels or flights in the chat interface
+        - Select suitable options and complete booking
+        - Orders will automatically appear on this page
+        """)
+    else:
+        st.subheader(f"📋 Order List ({len(orders)} items)")
+
+        # Sort options
+        col_sort1, col_sort2 = st.columns([3, 1])
+        with col_sort2:
+            sort_by = st.selectbox(
+                "Sort",
+                options=["Time (Newest)", "Time (Oldest)", "Price (High to Low)", "Price (Low to High)"],
+                label_visibility="collapsed",
+                key="order_sort"
+            )
+
+        # Sort
+        sorted_orders = orders.copy()
+        if sort_by == "Time (Newest)":
+            sorted_orders.reverse()
+        elif sort_by == "Price (High to Low)":
+            sorted_orders.sort(key=lambda x: x.get("price", 0), reverse=True)
+        elif sort_by == "Price (Low to High)":
+            sorted_orders.sort(key=lambda x: x.get("price", 0))
+
+        # Display orders
+        for idx, order in enumerate(sorted_orders, 1):
+            order_type = order.get("type", "unknown")
+            item_name = order.get("item_name", "Unknown Item")
+            price = order.get("price", 0)
+            order_id = order.get("id", "N/A")
+            status = order.get("status", "Unknown")
+            created_at = order.get("created_at", "N/A")
+            item_details = order.get("item_details", {})
+
+            # Order icon
+            icon = "🏨" if order_type == "hotel" else "✈️" if order_type == "flight" else "📦"
+
+            # Status color
+            if status == "Paid":
+                status_style = "background: #d1fae5; color: #065f46;"
+            elif status == "Pending":
+                status_style = "background: #fef3c7; color: #92400e;"
+            else:
+                status_style = "background: #fee2e2; color: #991b1b;"
+
+            with st.container():
+                st.markdown(f"""
+                <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;">
+                        <div>
+                            <div style="font-size: 18px; font-weight: 600;">{icon} {item_name}</div>
+                            <div style="color: #6b7280; font-size: 13px; margin-top: 4px;">Order Number: {order_id} | Created: {created_at}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 24px; font-weight: 700; color: #10b981;">¥{price:,.0f}</div>
+                            <span style="display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; {status_style}">{status}</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Order details expander
+                with st.expander("📄 View Details"):
+                    if order_type == "hotel":
+                        col_d1, col_d2 = st.columns(2)
+                        with col_d1:
+                            st.write(f"**Hotel Name**: {item_details.get('name', 'N/A')}")
+                            st.write(f"**Location**: {item_details.get('location', 'N/A')}")
+                            st.write(f"**Rating**: {item_details.get('rating', 'N/A')}/5.0")
+                        with col_d2:
+                            price_per_night = item_details.get('price', 0)
+                            st.write(f"**Price/Night**: ¥{price_per_night:,.0f}")
+                            amenities = item_details.get('amenities', [])
+                            if amenities:
+                                st.write(f"**Amenities**: {', '.join(amenities[:5])}")
+
+                    elif order_type == "flight":
+                        col_d1, col_d2 = st.columns(2)
+                        with col_d1:
+                            st.write(f"**Airline**: {item_details.get('carrier_name', 'N/A')}")
+                            st.write(f"**Flight Number**: {item_details.get('flight_number', 'N/A')}")
+                            st.write(f"**Origin**: {item_details.get('origin', 'N/A')}")
+                            st.write(f"**Destination**: {item_details.get('destination', 'N/A')}")
+                        with col_d2:
+                            st.write(f"**Departure Time**: {item_details.get('departure_time', 'N/A')}")
+                            st.write(f"**Arrival Time**: {item_details.get('arrival_time', 'N/A')}")
+                            st.write(f"**Flight Duration**: {item_details.get('duration', 'N/A')}")
+                            st.write(f"**Cabin**: {item_details.get('cabin_class', 'N/A')}")
+
+                    # Guest information
+                    st.divider()
+                    st.markdown("**👤 Guest Information**")
+                    col_c1, col_c2 = st.columns(2)
+                    with col_c1:
+                        st.write(f"**Name**: {order.get('customer_name', 'N/A')}")
+                        st.write(f"**Phone**: {order.get('customer_phone', 'N/A')}")
+                    with col_c2:
+                        st.write(f"**Email**: {order.get('customer_email', 'N/A')}")
+                        st.write(f"**ID Number**: {order.get('customer_id', 'N/A')}")
+
+                    # Special requests
+                    special_requests = order.get('special_requests', [])
+                    if special_requests:
+                        st.write(f"**Special Requests**: {', '.join(special_requests)}")
+
+                    # Notes
+                    notes = order.get('notes', '')
+                    if notes:
+                        st.write(f"**Notes**: {notes}")
+
+                # Action buttons
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
+                with col_btn1:
+                    if st.button("🗑️ Delete", key=f"del_{order_id}", use_container_width=True):
+                        # Delete order and refund
+                        current_conv["total_spent"] = current_conv.get("total_spent", 0) - price
+                        orders.remove(order)
+                        current_conv["orders"] = orders
+                        st.success(f"✅ Order deleted, refunded ¥{price:,.0f}")
+                        st.rerun()
+
+                with col_btn2:
+                    if st.button("📧 Email", key=f"email_{order_id}", use_container_width=True):
+                        st.info(f"✉️ Order confirmation email sent to {order.get('customer_email', 'N/A')}")
+
+    st.divider()
+
+    # Bottom operations
+    st.subheader("🛠️ Operations")
+    col_op1, col_op2 = st.columns(2)
+
+    with col_op1:
+        if st.button("🔄 Refresh", use_container_width=True):
+            st.rerun()
+
+    with col_op2:
+        if orders and st.button("🗑️ Clear All Orders", use_container_width=True, type="secondary"):
+            if st.checkbox("⚠️ Confirm clear all orders (cannot be undone)", key="confirm_clear_orders"):
+                current_conv["orders"] = []
+                current_conv["total_spent"] = 0
+                st.success("✅ All orders cleared")
+                st.rerun()
+
+
+
+# ✅ Modified booking handling function - use session_state to delay dialog trigger
 def handle_booking(order_type: str, item: dict, price: float):
     """
-    统一的预订处理函数 - 检查预算并扣除
+    Booking handling function - save booking data to session_state
     """
-    import time
-
-    remaining = get_remaining_budget()
-
-    # 检查预算是否足够
-    if price > remaining:
-        st.error(f"❌ 预算不足! 需要 ¥{price:,.0f}, 剩余 ¥{remaining:,.0f}")
-        return False
-
-    # 添加订单
-    order = {
-        "type": order_type,
+    # Save booking data to session_state, trigger dialog in main loop
+    st.session_state.booking_data = {
+        "order_type": order_type,
         "item": item,
-        "price": price,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "price": price
     }
-    st.session_state.orders.append(order)
 
-    # ✅ 扣除预算
-    st.session_state.total_spent += price
-    new_remaining = get_remaining_budget()
 
-    # ✅ 构建成功消息
-    item_name = item.get('name', item.get('carrier_name', 'Unknown'))
-
-    # 特殊处理酒店多晚预订
-    if order_type == 'hotel' and 'nights' in item:
-        nights = item['nights']
-        price_per_night = item.get('price', 0)
-        success_msg = f"""
-        ✅ **预订成功!**
-
-        - 类型: 🏨 酒店
-        - 名称: {item_name}
-        - 晚数: {nights}晚 @ ¥{price_per_night:,}/晚
-        - 扣除金额: ¥{price:,.0f}
-        - 剩余预算: ¥{new_remaining:,.0f}
-        """
-    else:
-        success_msg = f"""
-        ✅ **预订成功!**
-
-        - 类型: {'🏨 酒店' if order_type == 'hotel' else '✈️ 航班'}
-        - 项目: {item_name}
-        - 扣除金额: ¥{price:,.0f}
-        - 剩余预算: ¥{new_remaining:,.0f}
-        """
-
-    st.success(success_msg)
-    st.balloons()
-
-    # ✅ 设置一个标志，让气球播放完
-    st.session_state.booking_success = True
-
-    # 预算警告
-    if new_remaining < 0:
-        st.error(f"⚠️ 预算超支 ¥{abs(new_remaining):,.0f}!")
-    elif new_remaining < 500:
-        st.warning(f"⚠️ 预算即将用完,剩余 ¥{new_remaining:,.0f}")
-
-    # ✅ 延迟后刷新
-    time.sleep(2)  # 等待气球动画
-    st.rerun()
-
-    return True
 # ==================== Main Function ====================
 def handle_user_input(message: str):
     """Handle user input"""
@@ -862,7 +1402,16 @@ def handle_user_input(message: str):
 
 # ==================== Sidebar ====================
 with st.sidebar:
-    st.header("💬 Conversation Management")
+    # Use Markdown syntax to combine image and title text
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <img src="data:image/jpg;base64,{get_base64_image(icon_path)}" width="24"/>
+            <h3 style="margin: 0;">Conversation Management</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -876,60 +1425,62 @@ with st.sidebar:
 
     st.divider()
 
-    # ✅ 实时预算显示 - 放在最显眼的位置
-    st.markdown("### 💰 预算管理")
+    # ✅ Real-time budget display - in most visible position
+    st.markdown("### 💰 Budget Management")
 
     current_conv = get_current_conversation()
     if current_conv:
         total_budget = current_conv["preferences"].get("budget", 5000)
+        total_spent = current_conv.get("total_spent", 0)  # Read from conversation
         remaining = get_remaining_budget()
-        usage_percent = (st.session_state.total_spent / total_budget * 100) if total_budget > 0 else 0
+        usage_percent = (total_spent / total_budget * 100) if total_budget > 0 else 0
 
-        # 预算进度条
+        # Budget progress bar
         st.progress(min(usage_percent / 100, 1.0))
 
-        # 预算指标
+        # Budget metrics
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             st.metric(
-                "总预算",
+                "Total Budget",
                 f"¥{total_budget:,.0f}",
                 delta=None
             )
         with col_b2:
             st.metric(
-                "剩余",
+                "Remaining",
                 f"¥{remaining:,.0f}",
-                delta=f"-¥{st.session_state.total_spent:,.0f}" if st.session_state.total_spent > 0 else None,
+                delta=f"-¥{total_spent:,.0f}" if total_spent > 0 else None,
                 delta_color="inverse"
             )
 
-        # 预算状态提示
+        # Budget status alert
         if remaining < 0:
             st.markdown(f"""
             <div class="budget-danger">
-                ⚠️ 预算超支 ¥{abs(remaining):,.0f}
+                ⚠️ Over budget by ¥{abs(remaining):,.0f}
             </div>
             """, unsafe_allow_html=True)
         elif remaining < total_budget * 0.2:
             st.markdown(f"""
             <div class="budget-warning">
-                ⚠️ 预算即将用完 ({usage_percent:.1f}% 已使用)
+                ⚠️ Budget almost used ({usage_percent:.1f}% spent)
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
             <div class="budget-ok">
-                ✅ 预算充足 ({usage_percent:.1f}% 已使用)
+                ✅ Sufficient budget ({usage_percent:.1f}% spent)
             </div>
             """, unsafe_allow_html=True)
 
-        st.caption(f"已花费: ¥{st.session_state.total_spent:,.0f} | 订单数: {len(st.session_state.orders)}")
+        conv_orders = current_conv.get("orders", [])
+        st.caption(f"Spent: ¥{total_spent:,.0f} | Orders: {len(conv_orders)}")
 
-        # ✅ 显示预算建议
+        # ✅ Display budget recommendations
         budget_rec = get_budget_recommendations()
         if budget_rec:
-            with st.expander("💡 预算建议", expanded=False):
+            with st.expander("💡 Budget Recommendations", expanded=False):
                 st.markdown(f"**{budget_rec['message']}**")
                 if 'details' in budget_rec:
                     for key, value in budget_rec['details'].items():
@@ -954,28 +1505,51 @@ with st.sidebar:
             f"{'🟢' if is_active else '⚪'} {conv['name']} ({msg_count} msgs)",
             expanded=is_active
         ):
-            st.caption(f"Created: {conv['created_at']}")
+            # Only show update time
             st.caption(f"Updated: {conv['updated_at']}")
 
-            col_a, col_b, col_c = st.columns(3)
+            # Show order statistics
+            conv_orders = conv.get("orders", [])
+            conv_spent = conv.get("total_spent", 0)
+            if conv_orders:
+                st.caption(f"📦 Orders: {len(conv_orders)} | 💰 Spent: ¥{conv_spent:,.0f}")
+
+            # Button row 1: Switch and Orders
+            col_a, col_b = st.columns(2)
 
             with col_a:
                 if not is_active:
-                    if st.button("Switch", key=f"switch_{conv_id}", use_container_width=True):
+                    if st.button("🔄 Switch", key=f"switch_{conv_id}", use_container_width=True):
                         switch_conversation(conv_id)
                         st.rerun()
+                else:
+                    st.button("🟢 Active", key=f"active_{conv_id}", use_container_width=True, disabled=True)
 
             with col_b:
-                if st.button("Rename", key=f"rename_{conv_id}", use_container_width=True):
+                if st.button("📊 Orders", key=f"orders_{conv_id}", use_container_width=True):
+                    # First switch to this conversation
+                    if not is_active:
+                        switch_conversation(conv_id)
+                    # Switch to orders view
+                    st.session_state.current_view = "orders"
+                    st.rerun()
+
+            # Button row 2: Rename and Delete
+            col_c, col_d = st.columns(2)
+
+            with col_c:
+                if st.button("✏️ Rename", key=f"rename_{conv_id}", use_container_width=True):
                     st.session_state[f"renaming_{conv_id}"] = True
                     st.rerun()
 
-            with col_c:
+            with col_d:
                 if len(st.session_state.conversations) > 1:
-                    if st.button("Delete", key=f"delete_{conv_id}", use_container_width=True):
+                    if st.button("🗑️ Delete", key=f"delete_{conv_id}", use_container_width=True, type="secondary"):
                         if delete_conversation(conv_id):
                             st.success("✅ Deleted")
                             st.rerun()
+                else:
+                    st.button("🗑️ Delete", key=f"delete_disabled_{conv_id}", use_container_width=True, disabled=True)
 
             if st.session_state.get(f"renaming_{conv_id}", False):
                 new_name = st.text_input(
@@ -998,7 +1572,7 @@ with st.sidebar:
     st.divider()
 
     # Current conversation settings
-    st.markdown("#### ⚙️ Current Settings")
+    st.markdown("#### ⚙️ Trip Preferences")
 
     current_conv = get_current_conversation()
     if current_conv:
@@ -1007,7 +1581,6 @@ with st.sidebar:
         destination = st.text_input(
             "Destination",
             value=preferences.get("destination", ""),
-            placeholder="e.g.: Chengdu, Hangzhou, Tokyo",
             key="sidebar_destination"
         )
         preferences["destination"] = destination
@@ -1068,42 +1641,50 @@ with st.sidebar:
             if current_conv:
                 current_conv["messages"] = []
                 st.session_state.messages = []
-                # ✅ 清空时重置预算
-                st.session_state.total_spent = 0
-                st.session_state.orders = []
+                # ✅ Reset budget and orders when clearing
+                current_conv["total_spent"] = 0
+                current_conv["orders"] = []
                 st.success("Cleared")
                 st.rerun()
 
     with col2:
         if st.button("View Orders", use_container_width=True, key="view_orders_btn"):
-            if st.session_state.orders:
-                st.info(f"Total {len(st.session_state.orders)} orders")
-            else:
-                st.info("No orders yet")
+            # Switch to orders view
+            st.session_state.current_view = "orders"
+            st.rerun()
 
-    if st.session_state.orders:
-        with st.expander(f"Order Details ({len(st.session_state.orders)})", expanded=False):
-            for idx, order in enumerate(st.session_state.orders, 1):
-                item = order['item']
-                order_type = order['type']
-                name = item.get('name', item.get('carrier_name', 'Unknown'))
+    current_conv = get_current_conversation()
+    conv_orders = current_conv.get("orders", []) if current_conv else []
+
+    if conv_orders:
+        with st.expander(f"Order Details ({len(conv_orders)})", expanded=False):
+            for idx, order in enumerate(conv_orders, 1):
+                item = order.get('item', {})
+                order_type = order.get('type')
+                item_name = order.get('item_name', item.get('name', item.get('carrier_name', 'Unknown')))
                 price = order.get('price', 0)
 
-                # 显示订单详情
+                # Show order details
+                st.markdown(f"**{idx}. {order.get('id', 'N/A')}**")
+
                 if order_type == 'hotel' and 'nights' in item:
                     nights = item['nights']
-                    st.write(f"**{idx}. {name}** ({nights}晚)")
+                    st.write(f"🏨 {item_name} ({nights} nights)")
                 else:
-                    st.write(f"**{idx}. {name}**")
+                    st.write(f"{'✈️' if order_type == 'flight' else '🏨'} {item_name}")
 
-                st.caption(f"Type: {order_type} | Price: ¥{price:,.0f}")
+                st.caption(f"Amount: ¥{price:,.0f}")
+                st.caption(f"Guest: {order.get('customer_name', 'N/A')}")
+                st.caption(f"Time: {order.get('created_at', 'N/A')}")
+                st.caption(f"Status: {order.get('status', 'Confirmed')}")
 
                 if st.button("Delete", key=f"del_order_{idx}"):
-                    st.session_state.total_spent -= price
-                    st.session_state.orders.pop(idx-1)
+                    current_conv["total_spent"] = current_conv.get("total_spent", 0) - price
+                    conv_orders.pop(idx-1)
+                    current_conv["orders"] = conv_orders
                     st.rerun()
 
-                if idx < len(st.session_state.orders):
+                if idx < len(conv_orders):
                     st.divider()
 
     st.divider()
@@ -1111,13 +1692,14 @@ with st.sidebar:
     # Status info
     current_conv = get_current_conversation()
     if current_conv:
+        total_spent = current_conv.get("total_spent", 0)
         st.caption(f"""
         **Current Status**
         - Conversation: {current_conv['name']}
         - Messages: {len(current_conv['messages'])}
         - Destination: {current_conv['preferences'].get('destination') or 'Not set'}
         - Budget: ¥{current_conv['preferences'].get('budget', 0):,}
-        - Spent: ¥{st.session_state.total_spent:,}
+        - Spent: ¥{total_spent:,}
         - Days: {current_conv['preferences'].get('days', 0)}
         """)
 
@@ -1136,117 +1718,157 @@ with st.sidebar:
 
 
 # ==================== Main Interface ====================
-st.title("✈️ TripPilot Intelligent Travel Assistant")
-st.caption("Based on DeepSeek AI | Make Travel Planning Simple and Fun")
 
-# Display budget at top
-current_conv = get_current_conversation()
-if current_conv:
-    total_budget = current_conv["preferences"].get("budget", 5000)
-    remaining = get_remaining_budget()
+# ✅ View switcher
+current_view = st.session_state.get("current_view", "chat")
 
-    col_top1, col_top2, col_top3 = st.columns([2, 1, 1])
-    with col_top1:
-        st.info(f"📝 Current: **{current_conv['name']}** | {len(current_conv['messages'])} messages")
-    with col_top2:
-        st.metric("💰 Total Budget", f"¥{total_budget:,.0f}")
-    with col_top3:
-        delta_color = "normal" if remaining >= 0 else "inverse"
-        st.metric("Remaining", f"¥{remaining:,.0f}", delta_color=delta_color)
+if current_view == "orders":
+    # ==================== Orders View ====================
+    display_orders_view()
+else:
+    # ==================== Chat View ====================
 
-if not st.session_state.messages:
-    st.markdown("""
-    <div class="info-card">
-    <h3>Hello! I'm your dedicated AI travel assistant</h3>
-    <p>I can provide you with personalized travel services, including itinerary planning, hotel recommendations, flight inquiries, and more.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("""
-        **Itinerary Planning**
-        - Detailed daily arrangements
-        - Attraction route optimization
-        - Time allocation suggestions
-        """)
-
-    with col2:
-        st.markdown("""
-        **Accommodation Recommendations**
-        - Various hotel grade options
-        - Location advantage analysis
-        - Value-for-money ranking
-        """)
-
-    with col3:
-        st.markdown("""
-        **Transportation Arrangement**
-        - Flight schedule inquiry
-        - Optimal route recommendations
-        - Transportation tool suggestions
-        """)
-
-    st.divider()
-
-    st.subheader("Quick Start - Click to Try")
-
-    example_queries = [
-        "Help me plan a 3-day trip to Chengdu with a budget of 5000 yuan",
-        "Recommend hotels near West Lake in Hangzhou",
-        "Query flights from Beijing to Shanghai",
-        "What are the must-see attractions in Tokyo?",
-        "What's the weather like in Sanya, what clothes should I bring?"
-    ]
-
-    cols = st.columns(2)
-    for idx, query in enumerate(example_queries):
-        with cols[idx % 2]:
-            if st.button(f"{query}", key=f"example_query_{idx}", use_container_width=True):
-                st.session_state.pending_message = query
-                st.rerun()
-
-    st.divider()
-
-    st.info("**Tip**: You can directly tell me your travel needs in the input box below!")
-
-# Display message history
-message_container = st.container()
-with message_container:
-    for msg_idx, message in enumerate(st.session_state.messages):
-        if message["role"] == "user":
-            display_user_message(message["content"])
+    # Title with Logo
+    if os.path.exists(icon_path):
+        logo_base64 = get_base64_image(icon_path)
+        if logo_base64:
+            st.markdown(
+                f"""
+                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                    <img src="data:image/jpg;base64,{logo_base64}" 
+                         style="width: 50px; height: 50px; border-radius: 10px; 
+                                box-shadow: 0 2px 8px rgba(0,0,0,0.1);"/>
+                    <div>
+                        <h1 style="margin: 0; font-size: 2rem;">TripPilot - Intelligent Travel Assistant</h1>
+                        <p style="margin: 0; color: #6b7280; font-size: 0.9rem;">
+                            Powered by AI | Make Travel Planning Simple and Fun
+                        </p>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         else:
-            display_ai_message(message, msg_idx)
+            st.title("✈️ TripPilot - Intelligent Travel Assistant")
+    else:
+        st.title("✈️ TripPilot - Intelligent Travel Assistant")
 
-# Handle pending message
-if "pending_message" in st.session_state and st.session_state.pending_message:
-    pending_msg = st.session_state.pending_message
-    st.session_state.pending_message = None
-    handle_user_input(pending_msg)
+    st.caption("Based on DeepSeek AI | Adaptive Layout + Booking Confirmation Dialog")
 
-# Input box
-user_input = st.chat_input(
-    "Tell me your travel needs...",
-    key="chat_input"
-)
+    # Display budget at top
+    current_conv = get_current_conversation()
+    if current_conv:
+        total_budget = current_conv["preferences"].get("budget", 5000)
+        remaining = get_remaining_budget()
 
-if user_input:
-    handle_user_input(user_input)
+        col_top1, col_top2, col_top3 = st.columns([2, 1, 1])
+        with col_top1:
+            st.info(f"📍 Current: **{current_conv['name']}** | {len(current_conv['messages'])} messages")
+        with col_top2:
+            st.metric("💰 Total Budget", f"¥{total_budget:,.0f}")
+        with col_top3:
+            delta_color = "normal" if remaining >= 0 else "inverse"
+            st.metric("Remaining", f"¥{remaining:,.0f}", delta_color=delta_color)
 
-# Footer
-with st.container():
-    st.markdown("---")
-    col1, col2, col3 = st.columns(3)
+    if not st.session_state.messages:
+        st.markdown("""
+        <div class="info-card">
+        <h3>Hello! I'm your dedicated AI travel assistant</h3>
+        <p>I can provide you with personalized travel services, including itinerary planning, hotel recommendations, flight inquiries, and more.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    with col1:
-        st.caption("✈️ TripPilot v2.2 - Your Intelligent Travel Partner")
+        col1, col2, col3 = st.columns(3)
 
-    with col2:
-        if st.session_state.messages:
-            last_msg_time = datetime.now().strftime("%H:%M")
-            st.caption(f"Last updated: {last_msg_time}")
+        with col1:
+            st.markdown("""
+            **Itinerary Planning**
+            - Detailed daily arrangements
+            - Attraction route optimization
+            - Time allocation suggestions
+            """)
 
-    with col3:
-        st.caption("💡 Tip: Unified budget management across all bookings")
+        with col2:
+            st.markdown("""
+            **Accommodation Recommendations**
+            - Various hotel grade options
+            - Location advantage analysis
+            - Value-for-money ranking
+            """)
+
+        with col3:
+            st.markdown("""
+            **Transportation Arrangement**
+            - Flight schedule inquiry
+            - Optimal route recommendations
+            - Transportation tool suggestions
+            """)
+
+        st.divider()
+
+        st.subheader("Quick Start - Click to Try")
+
+        example_queries = [
+            "Help me plan a 3-day trip to Chengdu with a budget of 5000 yuan",
+            "Recommend hotels near West Lake in Hangzhou",
+            "Query flights from Beijing to Shanghai",
+            "What are the must-see attractions in Tokyo?",
+            "What's the weather like in Sanya, what clothes should I bring?"
+        ]
+
+        cols = st.columns(2)
+        for idx, query in enumerate(example_queries):
+            with cols[idx % 2]:
+                if st.button(f"{query}", key=f"example_query_{idx}", use_container_width=True):
+                    st.session_state.pending_message = query
+                    st.rerun()
+
+        st.divider()
+
+        st.info("**Tip**: You can directly tell me your travel needs in the input box below!")
+
+    # Display message history
+    message_container = st.container()
+    with message_container:
+        for msg_idx, message in enumerate(st.session_state.messages):
+            if message["role"] == "user":
+                display_user_message(message["content"])
+            else:
+                display_ai_message(message, msg_idx)
+
+    # ✅ Check if there's pending booking data, if so trigger dialog
+    if st.session_state.booking_data:
+        booking_data = st.session_state.booking_data
+        booking_confirmation_dialog(
+            order_type=booking_data["order_type"],
+            item=booking_data["item"],
+            price=booking_data["price"]
+        )
+
+    # Handle pending message
+    if "pending_message" in st.session_state and st.session_state.pending_message:
+        pending_msg = st.session_state.pending_message
+        st.session_state.pending_message = None
+        handle_user_input(pending_msg)
+
+    # Input box
+    user_input = st.chat_input(
+        "Tell me your travel needs...",
+        key="chat_input"
+    )
+
+    if user_input:
+        handle_user_input(user_input)
+
+    # Footer
+    with st.container():
+        st.markdown("---")
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.caption("✈️ TripPilot v2.4 - Your Intelligent Travel Partner (With Booking Confirmation)")
+
+        with col2:
+            if st.session_state.messages:
+                last_msg_time = datetime.now().strftime("%H:%M")
+                st.caption(f"Last updated: {last_msg_time}")

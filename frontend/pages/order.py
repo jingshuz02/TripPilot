@@ -1,34 +1,49 @@
 """
-完善版订单管理页面
-功能：
-1. ✅ 显示当前对话的所有订单
-2. ✅ 支持查看订单详情
-3. ✅ 支持删除订单并退款
-4. ✅ 实时预算统计
-5. ✅ 订单导出功能
+Order Management Page - English Version with Data Visualization
+Features:
+1. ✅ Display all orders for current conversation
+2. ✅ Data visualization (pie charts, bar charts, trend charts)
+3. ✅ View order details
+4. ✅ Delete orders with refund
+5. ✅ Real-time budget statistics
 """
 
 import streamlit as st
 from datetime import datetime
 from uuid import uuid4
 import json
+import os
+import sys
 
-# ==================== 页面配置 ====================
+# ==================== Path Configuration ====================
+current_dir = os.path.dirname(__file__)
+frontend_dir = os.path.abspath(os.path.join(current_dir, '..'))
+sys.path.insert(0, frontend_dir)
+
+# ==================== Check Plotly ====================
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+# ==================== Page Configuration ====================
 st.set_page_config(
-    page_title="订单管理 | TripPilot",
+    page_title="Order Management | TripPilot",
     page_icon="📋",
     layout="wide"
 )
 
-# ==================== 初始化 Session State ====================
+# ==================== Initialize Session State ====================
 def init_session_state():
-    """初始化所有必要的session state"""
+    """Initialize all necessary session states"""
     if "conversations" not in st.session_state:
         default_conv_id = str(uuid4())[:8]
         st.session_state.conversations = {
             default_conv_id: {
                 "id": default_conv_id,
-                "name": "新对话",
+                "name": "New Conversation",
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "messages": [],
@@ -45,20 +60,33 @@ def init_session_state():
         }
         st.session_state.current_conversation_id = default_conv_id
 
+    # Fix old conversation data structure
+    for conv_id, conv in st.session_state.conversations.items():
+        if "preferences" not in conv:
+            conv["preferences"] = {
+                "destination": conv.get("destination", ""),
+                "days": conv.get("days", 3),
+                "budget": conv.get("budget", 5000),
+                "start_date": conv.get("start_date", datetime.now().date()),
+                "end_date": conv.get("end_date", None)
+            }
+        if "orders" not in conv:
+            conv["orders"] = []
+        if "total_spent" not in conv:
+            conv["total_spent"] = 0
+
     if "current_conversation_id" not in st.session_state:
         st.session_state.current_conversation_id = list(st.session_state.conversations.keys())[0]
 
 init_session_state()
 
-# ==================== 辅助函数 ====================
 def get_current_conversation():
-    """获取当前对话"""
+    """Get current conversation"""
     conv_id = st.session_state.current_conversation_id
     return st.session_state.conversations.get(conv_id)
 
-
 def delete_order(order_id: str):
-    """删除订单并退款"""
+    """Delete order and refund"""
     current_conv = get_current_conversation()
     if not current_conv:
         return False
@@ -66,41 +94,142 @@ def delete_order(order_id: str):
     orders = current_conv.get("orders", [])
     for order in orders:
         if order["id"] == order_id:
-            # 退款
             refund_amount = order["price"]
             current_conv["total_spent"] = current_conv.get("total_spent", 0) - refund_amount
-
-            # 删除订单
             orders.remove(order)
             current_conv["orders"] = orders
-
-            st.success(f"✅ 订单已删除，已退款 ¥{refund_amount:,.0f}")
+            st.success(f"✅ Order deleted, refunded ¥{refund_amount:,.0f}")
             return True
-
     return False
 
-
-def export_orders_to_json():
-    """导出订单为JSON"""
-    current_conv = get_current_conversation()
-    if not current_conv:
+# ==================== Chart Creation Functions ====================
+def create_budget_chart(total_budget, total_spent):
+    """Create budget usage pie chart"""
+    if not PLOTLY_AVAILABLE:
         return None
 
-    orders = current_conv.get("orders", [])
-    export_data = {
-        "conversation_id": current_conv["id"],
-        "conversation_name": current_conv["name"],
-        "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "total_orders": len(orders),
-        "total_spent": current_conv.get("total_spent", 0),
-        "budget": current_conv["preferences"].get("budget", 5000),
-        "orders": orders
-    }
+    remaining = max(0, total_budget - total_spent)
 
-    return json.dumps(export_data, ensure_ascii=False, indent=2)
+    fig = go.Figure(data=[go.Pie(
+        labels=['Spent', 'Remaining'],
+        values=[total_spent, remaining],
+        hole=.3,
+        marker_colors=['#ef4444', '#10b981'],
+        textinfo='label+percent',
+        textfont_size=14,
+    )])
 
+    fig.update_layout(
+        title_text="Budget Usage",
+        height=300,
+        showlegend=True,
+        margin=dict(t=40, b=20, l=20, r=20)
+    )
 
-# ==================== 样式 ====================
+    return fig
+
+def create_order_type_chart(orders):
+    """Create order type distribution pie chart"""
+    if not PLOTLY_AVAILABLE or not orders:
+        return None
+
+    type_counts = {}
+    type_labels = {"hotel": "🏨 Hotels", "flight": "✈️ Flights"}
+
+    for order in orders:
+        order_type = order.get("type", "unknown")
+        label = type_labels.get(order_type, "Others")
+        type_counts[label] = type_counts.get(label, 0) + 1
+
+    fig = go.Figure(data=[go.Pie(
+        labels=list(type_counts.keys()),
+        values=list(type_counts.values()),
+        hole=.3,
+        marker_colors=['#3b82f6', '#f59e0b', '#8b5cf6'],
+        textinfo='label+value',
+        textfont_size=14,
+    )])
+
+    fig.update_layout(
+        title_text="Order Type Distribution",
+        height=300,
+        showlegend=True,
+        margin=dict(t=40, b=20, l=20, r=20)
+    )
+
+    return fig
+
+def create_order_amount_chart(orders):
+    """Create order amount bar chart"""
+    if not PLOTLY_AVAILABLE or not orders:
+        return None
+
+    hotel_total = sum(o["price"] for o in orders if o.get("type") == "hotel")
+    flight_total = sum(o["price"] for o in orders if o.get("type") == "flight")
+
+    fig = go.Figure(data=[
+        go.Bar(
+            x=['🏨 Hotels', '✈️ Flights'],
+            y=[hotel_total, flight_total],
+            marker_color=['#3b82f6', '#f59e0b'],
+            text=[f'¥{hotel_total:,.0f}', f'¥{flight_total:,.0f}'],
+            textposition='auto',
+        )
+    ])
+
+    fig.update_layout(
+        title_text="Total Amount by Type",
+        xaxis_title="Order Type",
+        yaxis_title="Amount (¥)",
+        height=300,
+        showlegend=False,
+        margin=dict(t=40, b=40, l=40, r=20)
+    )
+
+    return fig
+
+def create_spending_trend_chart(orders):
+    """Create spending trend line chart"""
+    if not PLOTLY_AVAILABLE or not orders or len(orders) < 2:
+        return None
+
+    sorted_orders = sorted(orders, key=lambda x: x.get("created_at", ""))
+
+    dates = []
+    cumulative_spending = []
+    current_total = 0
+
+    for order in sorted_orders:
+        created_at = order.get("created_at", "")
+        if created_at:
+            date_str = created_at.split()[0] if " " in created_at else created_at[:10]
+            dates.append(date_str)
+            current_total += order.get("price", 0)
+            cumulative_spending.append(current_total)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=dates,
+        y=cumulative_spending,
+        mode='lines+markers',
+        name='Cumulative Spending',
+        line=dict(color='#10b981', width=3),
+        marker=dict(size=8)
+    ))
+
+    fig.update_layout(
+        title_text="Spending Trend",
+        xaxis_title="Date",
+        yaxis_title="Cumulative Amount (¥)",
+        height=300,
+        showlegend=True,
+        margin=dict(t=40, b=40, l=40, r=20)
+    )
+
+    return fig
+
+# ==================== Styles ====================
 st.markdown("""
 <style>
     .order-card {
@@ -110,56 +239,6 @@ st.markdown("""
         padding: 20px;
         margin-bottom: 16px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    }
-    
-    .order-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid #e5e7eb;
-    }
-    
-    .order-title {
-        font-size: 18px;
-        font-weight: 600;
-        color: #111827;
-    }
-    
-    .order-price {
-        font-size: 24px;
-        font-weight: 700;
-        color: #10b981;
-    }
-    
-    .order-meta {
-        color: #6b7280;
-        font-size: 13px;
-        margin-top: 4px;
-    }
-    
-    .status-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 500;
-    }
-    
-    .status-paid {
-        background: #d1fae5;
-        color: #065f46;
-    }
-    
-    .status-pending {
-        background: #fef3c7;
-        color: #92400e;
-    }
-    
-    .status-cancelled {
-        background: #fee2e2;
-        color: #991b1b;
     }
     
     .summary-card {
@@ -173,258 +252,258 @@ st.markdown("""
     .summary-item {
         display: flex;
         justify-content: space-between;
-        padding: 8px 0;
+        margin: 8px 0;
+        font-size: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== 主界面 ====================
-st.title("📋 订单管理")
+# ==================== Main Interface ====================
+st.title("📋 Order Management")
 
+# Get current conversation
 current_conv = get_current_conversation()
 
 if not current_conv:
-    st.error("❌ 未找到当前对话")
+    st.error("❌ Valid conversation not found")
     st.stop()
 
-# ==================== 顶部汇总卡片 ====================
+# Get order data
 orders = current_conv.get("orders", [])
-total_spent = current_conv.get("total_spent", 0)
+
+# Backward compatibility: try to read from global state
+if not orders and "orders" in st.session_state:
+    orders = st.session_state.get("orders", [])
+    total_spent = st.session_state.get("total_spent", 0)
+    # Prompt user to migrate
+    st.warning("⚠️ Old data structure detected")
+    if st.button("🔄 Migrate Data to Current Conversation", type="primary"):
+        current_conv["orders"] = orders
+        current_conv["total_spent"] = total_spent
+        st.success("✅ Data migration successful!")
+        st.rerun()
+else:
+    total_spent = current_conv.get("total_spent", 0)
+
 total_budget = current_conv["preferences"].get("budget", 5000)
 remaining = total_budget - total_spent
 
+# ==================== Budget Summary Card ====================
 st.markdown(f"""
 <div class='summary-card'>
-    <h3 style='margin: 0 0 16px 0;'>💰 预算概览</h3>
+    <h3 style='margin-top: 0;'>💰 Budget Summary</h3>
     <div class='summary-item'>
-        <span>总预算</span>
+        <span>Total Budget</span>
         <span style='font-size: 20px; font-weight: 700;'>¥{total_budget:,.0f}</span>
     </div>
     <div class='summary-item'>
-        <span>已花费</span>
+        <span>Spent</span>
         <span style='font-size: 20px; font-weight: 700;'>¥{total_spent:,.0f}</span>
     </div>
     <div class='summary-item' style='border-top: 1px solid rgba(255,255,255,0.3); padding-top: 12px;'>
-        <span>剩余预算</span>
+        <span>Remaining Budget</span>
         <span style='font-size: 24px; font-weight: 700;'>¥{remaining:,.0f}</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== 统计卡片 ====================
+# ==================== Statistics Cards ====================
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric("📦 订单总数", len(orders))
+    st.metric("📦 Total Orders", len(orders))
 
 with col2:
     hotel_orders = [o for o in orders if o.get("type") == "hotel"]
-    st.metric("🏨 酒店订单", len(hotel_orders))
+    st.metric("🏨 Hotel Orders", len(hotel_orders))
 
 with col3:
     flight_orders = [o for o in orders if o.get("type") == "flight"]
-    st.metric("✈️ 航班订单", len(flight_orders))
+    st.metric("✈️ Flight Orders", len(flight_orders))
 
 with col4:
     usage_percent = (total_spent / total_budget * 100) if total_budget > 0 else 0
-    st.metric("📊 预算使用率", f"{usage_percent:.1f}%")
+    st.metric("📊 Budget Usage", f"{usage_percent:.1f}%")
 
-# 预算进度条
+# Budget progress bar
 if total_budget > 0:
     progress = min(total_spent / total_budget, 1.0)
     st.progress(progress)
 
 st.divider()
 
-# ==================== 订单列表 ====================
-if not orders:
-    st.info("📝 暂无订单")
-    st.markdown("""
-    ### 💡 提示
-    - 在聊天界面搜索酒店或航班
-    - 选择合适的选项并完成预订
-    - 订单将自动显示在此页面
-    """)
-else:
-    st.subheader(f"📋 订单列表 ({len(orders)} 个)")
+# ==================== 📊 Data Visualization Area ====================
+if not PLOTLY_AVAILABLE:
+    st.error("❌ Plotly not installed!")
+    st.code("pip install plotly", language="bash")
 
-    # 排序选项
+elif not orders:
+    st.info("📝 No order data available")
+    st.markdown("""
+    ### 💡 Tips
+    - Search for hotels or flights in the chat interface
+    - Select suitable options and complete booking
+    - Orders will automatically appear on this page
+    """)
+
+    # Provide test data option
+    if st.button("🧪 Load Test Data (Demo Only)", type="primary"):
+        test_orders = [
+            {
+                "id": "TEST001",
+                "type": "hotel",
+                "item_name": "Chengdu Oriental Plaza NUO Hotel",
+                "price": 1440,
+                "created_at": "2025-11-22 10:30:00",
+                "status": "Paid",
+                "item_details": {
+                    "name": "Chengdu Oriental Plaza NUO Hotel",
+                    "location": "Jinjiang District, Chengdu",
+                    "rating": 4.8,
+                    "nights": 2
+                }
+            },
+            {
+                "id": "TEST002",
+                "type": "hotel",
+                "item_name": "Chengdu Times Garden Hotel",
+                "price": 1460,
+                "created_at": "2025-11-23 14:20:00",
+                "status": "Paid",
+                "item_details": {
+                    "name": "Chengdu Times Garden Hotel",
+                    "location": "Wuhou District, Chengdu",
+                    "rating": 4.7,
+                    "nights": 2
+                }
+            }
+        ]
+        current_conv["orders"] = test_orders
+        current_conv["total_spent"] = 2900
+        st.success("✅ Test data loaded!")
+        st.rerun()
+
+else:
+    st.subheader("📊 Data Analysis")
+
+    # Create two rows of charts
+    chart_row1_col1, chart_row1_col2 = st.columns(2)
+
+    with chart_row1_col1:
+        budget_chart = create_budget_chart(total_budget, total_spent)
+        if budget_chart:
+            st.plotly_chart(budget_chart, use_container_width=True, key="budget_chart")
+
+    with chart_row1_col2:
+        type_chart = create_order_type_chart(orders)
+        if type_chart:
+            st.plotly_chart(type_chart, use_container_width=True, key="type_chart")
+
+    chart_row2_col1, chart_row2_col2 = st.columns(2)
+
+    with chart_row2_col1:
+        amount_chart = create_order_amount_chart(orders)
+        if amount_chart:
+            st.plotly_chart(amount_chart, use_container_width=True, key="amount_chart")
+
+    with chart_row2_col2:
+        trend_chart = create_spending_trend_chart(orders)
+        if trend_chart:
+            st.plotly_chart(trend_chart, use_container_width=True, key="trend_chart")
+        else:
+            st.info("📈 Insufficient orders to display trend chart (at least 2 orders required)")
+
+st.divider()
+
+# ==================== Order List ====================
+if orders:
+    st.subheader(f"📋 Order List ({len(orders)} items)")
+
+    # Sort options
     col_sort1, col_sort2 = st.columns([3, 1])
     with col_sort2:
         sort_by = st.selectbox(
-            "排序",
-            options=["时间倒序", "时间正序", "价格从高到低", "价格从低到高"],
+            "Sort",
+            options=["Time (Newest)", "Time (Oldest)", "Price (High to Low)", "Price (Low to High)"],
             label_visibility="collapsed"
         )
 
-    # 排序
+    # Sort
     sorted_orders = orders.copy()
-    if sort_by == "时间倒序":
+    if sort_by == "Time (Newest)":
         sorted_orders.reverse()
-    elif sort_by == "价格从高到低":
+    elif sort_by == "Price (High to Low)":
         sorted_orders.sort(key=lambda x: x.get("price", 0), reverse=True)
-    elif sort_by == "价格从低到高":
+    elif sort_by == "Price (Low to High)":
         sorted_orders.sort(key=lambda x: x.get("price", 0))
 
-    # 显示订单
+    # Display orders
     for idx, order in enumerate(sorted_orders, 1):
         order_type = order.get("type", "unknown")
-        item_name = order.get("item_name", "未知项目")
+        item_name = order.get("item_name", "Unknown Item")
         price = order.get("price", 0)
         order_id = order.get("id", "N/A")
-        status = order.get("status", "未知")
+        status = order.get("status", "Paid")
         created_at = order.get("created_at", "N/A")
         item_details = order.get("item_details", {})
 
-        # 订单图标
         icon = "🏨" if order_type == "hotel" else "✈️" if order_type == "flight" else "📦"
-
-        # 状态徽章
-        status_class = "status-paid" if status == "已支付" else "status-pending" if status == "待支付" else "status-cancelled"
 
         with st.container():
             st.markdown(f"""
             <div class='order-card'>
-                <div class='order-header'>
+                <div style='display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;'>
                     <div>
-                        <div class='order-title'>{icon} {item_name}</div>
-                        <div class='order-meta'>订单号: {order_id} | 创建时间: {created_at}</div>
+                        <div style='font-size: 18px; font-weight: 600;'>{icon} {item_name}</div>
+                        <div style='color: #6b7280; font-size: 13px; margin-top: 4px;'>Order Number: {order_id} | Created: {created_at}</div>
                     </div>
                     <div style='text-align: right;'>
-                        <div class='order-price'>¥{price:,.0f}</div>
-                        <span class='status-badge {status_class}'>{status}</span>
+                        <div style='font-size: 24px; font-weight: 700; color: #10b981;'>¥{price:,.0f}</div>
+                        <span style='display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; background: #d1fae5; color: #065f46;'>{status}</span>
                     </div>
                 </div>
+            </div>
             """, unsafe_allow_html=True)
 
-            # 订单详情展开
-            with st.expander("📄 查看详情"):
+            with st.expander("📄 View Details"):
                 if order_type == "hotel":
                     col_d1, col_d2 = st.columns(2)
-
                     with col_d1:
-                        st.write(f"**酒店名称**: {item_details.get('name', 'N/A')}")
-                        st.write(f"**位置**: {item_details.get('location', 'N/A')}")
-                        st.write(f"**评分**: {item_details.get('rating', 'N/A')}/5.0")
-
-                        # 如果有入住信息
-                        if 'checkin_date' in item_details:
-                            checkin = item_details['checkin_date']
-                            checkout = item_details.get('checkout_date', 'N/A')
-                            nights = item_details.get('nights', 1)
-                            st.write(f"**入住日期**: {checkin}")
-                            st.write(f"**退房日期**: {checkout}")
-                            st.write(f"**入住晚数**: {nights}晚")
-
+                        st.write(f"**Hotel Name**: {item_details.get('name', 'N/A')}")
+                        st.write(f"**Location**: {item_details.get('location', 'N/A')}")
+                        st.write(f"**Rating**: {item_details.get('rating', 'N/A')}/5.0")
                     with col_d2:
                         price_per_night = item_details.get('price', 0)
-                        st.write(f"**价格/晚**: ¥{price_per_night:,.0f}")
-                        st.write(f"**地址**: {item_details.get('address', 'N/A')}")
-
-                        # 设施
+                        st.write(f"**Price/Night**: ¥{price_per_night:,.0f}")
                         amenities = item_details.get('amenities', [])
                         if amenities:
-                            st.write(f"**设施**: {', '.join(amenities[:5])}")
+                            st.write(f"**Amenities**: {', '.join(amenities[:5])}")
 
                 elif order_type == "flight":
                     col_d1, col_d2 = st.columns(2)
-
                     with col_d1:
-                        st.write(f"**航空公司**: {item_details.get('carrier_name', 'N/A')}")
-                        st.write(f"**航班号**: {item_details.get('flight_number', 'N/A')}")
-                        st.write(f"**出发**: {item_details.get('origin', 'N/A')}")
-                        st.write(f"**到达**: {item_details.get('destination', 'N/A')}")
-
+                        st.write(f"**Airline**: {item_details.get('carrier_name', 'N/A')}")
+                        st.write(f"**Flight Number**: {item_details.get('flight_number', 'N/A')}")
+                        st.write(f"**Origin**: {item_details.get('origin', 'N/A')}")
                     with col_d2:
-                        st.write(f"**起飞时间**: {item_details.get('departure_time', 'N/A')}")
-                        st.write(f"**到达时间**: {item_details.get('arrival_time', 'N/A')}")
-                        st.write(f"**飞行时长**: {item_details.get('duration', 'N/A')}")
-                        cabin = item_details.get('cabin_class', 'N/A')
-                        st.write(f"**舱位**: {cabin}")
+                        st.write(f"**Destination**: {item_details.get('destination', 'N/A')}")
+                        st.write(f"**Departure**: {item_details.get('departure_time', 'N/A')}")
+                        st.write(f"**Cabin**: {item_details.get('cabin_class', 'N/A')}")
 
-            # 操作按钮
-            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 4])
-
-            with col_btn1:
-                if st.button("🗑️ 删除", key=f"del_{order_id}", use_container_width=True):
+            col_btn1, col_btn2, col_btn3 = st.columns([4, 1, 1])
+            with col_btn3:
+                if st.button("🗑️ Delete", key=f"del_{order_id}_{idx}", use_container_width=True):
                     if delete_order(order_id):
                         st.rerun()
 
-            with col_btn2:
-                if st.button("📧 发送邮件", key=f"email_{order_id}", use_container_width=True):
-                    st.info(f"✉️ 订单确认邮件已发送到您的邮箱")
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
 st.divider()
 
-# ==================== 底部操作区 ====================
-st.subheader("🛠️ 批量操作")
+# ==================== Bottom Information ====================
+col_footer1, col_footer2 = st.columns([3, 1])
 
-col_op1, col_op2, col_op3, col_op4 = st.columns(4)
+with col_footer1:
+    st.caption(f"📍 Current Conversation: **{current_conv['name']}** | Conversation ID: {current_conv['id']}")
 
-with col_op1:
-    if st.button("🔄 刷新页面", use_container_width=True):
+with col_footer2:
+    if st.button("🔄 Refresh", use_container_width=True):
         st.rerun()
-
-with col_op2:
-    if orders:
-        json_data = export_orders_to_json()
-        if json_data:
-            st.download_button(
-                label="📊 导出订单",
-                data=json_data,
-                file_name=f"orders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
-
-with col_op3:
-    if st.button("💬 返回聊天", use_container_width=True):
-        st.switch_page("pages/chat.py")
-
-with col_op4:
-    if orders:
-        if st.button("🗑️ 清空所有订单", use_container_width=True, type="secondary"):
-            if st.checkbox("⚠️ 确认清空所有订单（不可恢复）", key="confirm_clear"):
-                current_conv["orders"] = []
-                current_conv["total_spent"] = 0
-                st.success("✅ 所有订单已清空")
-                st.rerun()
-
-# ==================== 侧边栏 ====================
-with st.sidebar:
-    st.header("📊 统计信息")
-
-    if orders:
-        # 按类型统计
-        hotel_total = sum(o["price"] for o in orders if o.get("type") == "hotel")
-        flight_total = sum(o["price"] for o in orders if o.get("type") == "flight")
-
-        st.markdown("### 💰 费用统计")
-        st.write(f"🏨 酒店: ¥{hotel_total:,.0f}")
-        st.write(f"✈️ 航班: ¥{flight_total:,.0f}")
-        st.write(f"📊 总计: ¥{total_spent:,.0f}")
-
-        st.divider()
-
-        # 按状态统计
-        st.markdown("### 📋 订单状态")
-        paid = len([o for o in orders if o.get("status") == "已支付"])
-        pending = len([o for o in orders if o.get("status") == "待支付"])
-
-        st.write(f"✅ 已支付: {paid} 个")
-        st.write(f"⏳ 待支付: {pending} 个")
-
-    st.divider()
-
-    # 对话信息
-    st.markdown("### 💬 当前对话")
-    st.write(f"**名称**: {current_conv['name']}")
-    st.write(f"**目的地**: {current_conv['preferences'].get('destination', '未设置')}")
-    st.write(f"**天数**: {current_conv['preferences'].get('days', 0)} 天")
-    st.write(f"**消息数**: {len(current_conv.get('messages', []))} 条")
-
-# ==================== 底部提示 ====================
-st.markdown("---")
-st.caption("💡 提示：订单数据保存在当前会话中，切换对话或关闭浏览器后将丢失")
