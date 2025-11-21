@@ -1,9 +1,10 @@
 """
-TripPilot Chat Interface - 修复版
-解决问题：
-1. KeyError: 'preferences' - 统一数据结构
-2. 界面卡顿 - 优化 rerun 逻辑
-3. 缓存问题 - 添加版本控制
+TripPilot Chat Interface - 统一预算管理版
+新功能：
+1. 💰 统一预算管理(不是每个类型单独预算)
+2. 📊 实时显示剩余预算
+3. 🎨 使用新Logo
+4. ✅ 预订成功弹窗显示扣除金额
 """
 
 import streamlit as st
@@ -32,7 +33,7 @@ except ImportError:
 # ==================== Page Configuration ====================
 st.set_page_config(
     page_title="TripPilot - Intelligent Travel Assistant",
-    page_icon="💬",
+    page_icon="✈️",
     layout="wide"
 )
 
@@ -62,7 +63,7 @@ def init_session_state():
         }
         st.session_state.current_conversation_id = default_conv_id
 
-    # ✅ 修复旧对话数据结构（向后兼容）
+    # ✅ 修复旧对话数据结构(向后兼容)
     for conv_id, conv in st.session_state.conversations.items():
         if "preferences" not in conv:
             conv["preferences"] = {
@@ -93,17 +94,21 @@ def init_session_state():
         if "current_trip" not in st.session_state:
             st.session_state.current_trip = current_conv["preferences"]
 
+    # ✅ 统一预算管理
     if "orders" not in st.session_state:
         st.session_state.orders = []
+
+    if "total_spent" not in st.session_state:
+        st.session_state.total_spent = 0
 
     if "conversation_id" not in st.session_state:
         st.session_state.conversation_id = st.session_state.current_conversation_id
 
-    # ✅ 添加处理状态，避免重复处理
+    # ✅ 添加处理状态,避免重复处理
     if "processing" not in st.session_state:
         st.session_state.processing = False
 
-    # ✅ 添加最后一条消息ID，避免重复触发
+    # ✅ 添加最后一条消息ID,避免重复触发
     if "last_message_id" not in st.session_state:
         st.session_state.last_message_id = None
 
@@ -191,6 +196,16 @@ def save_message_to_conversation(role: str, content: str, **kwargs):
         current_conv["messages"].append(message)
         st.session_state.messages = current_conv["messages"]
         update_conversation_timestamp()
+
+
+# ✅ 计算剩余预算的辅助函数
+def get_remaining_budget():
+    """获取当前剩余预算"""
+    current_conv = get_current_conversation()
+    if current_conv:
+        total_budget = current_conv["preferences"].get("budget", 5000)
+        return total_budget - st.session_state.total_spent
+    return 0
 
 
 init_session_state()
@@ -326,6 +341,37 @@ st.markdown("""
         color: white;
     }
     
+    /* Budget Warning Box */
+    .budget-warning {
+        background: #fef3c7;
+        border: 2px solid #f59e0b;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 8px 0;
+        color: #92400e;
+        font-weight: 600;
+    }
+    
+    .budget-danger {
+        background: #fee2e2;
+        border: 2px solid #ef4444;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 8px 0;
+        color: #991b1b;
+        font-weight: 600;
+    }
+    
+    .budget-ok {
+        background: #d1fae5;
+        border: 2px solid #10b981;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 8px 0;
+        color: #065f46;
+        font-weight: 600;
+    }
+    
     /* Sidebar Expander Style */
     [data-testid="stSidebar"] .streamlit-expanderHeader {
         background-color: rgba(255, 255, 255, 0.7) !important;
@@ -370,40 +416,6 @@ st.markdown("""
     [data-testid="stSidebar"] [data-testid="stMetricValue"] {
         color: #065f46 !important;
         font-weight: 700 !important;
-    }
-    
-    /* Sidebar Success/Info/Error Messages */
-    [data-testid="stSidebar"] .stSuccess,
-    [data-testid="stSidebar"] .stInfo,
-    [data-testid="stSidebar"] .stError {
-        background-color: rgba(255, 255, 255, 0.9) !important;
-    }
-    
-    /* Conversation List Item Style */
-    .conversation-item {
-        padding: 12px;
-        margin: 5px 0;
-        border-radius: 8px;
-        background-color: rgba(255, 255, 255, 0.8);
-        border: 1px solid #10b981;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    
-    .conversation-item:hover {
-        background-color: rgba(255, 255, 255, 1);
-        transform: translateX(3px);
-        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-    }
-    
-    .conversation-item.active {
-        background-color: #10b981 !important;
-        color: white !important;
-        border-color: #059669 !important;
-    }
-    
-    .conversation-item.active * {
-        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -506,9 +518,14 @@ def display_ai_message(message: dict, msg_idx: int = 0):
 
 
 def display_hotels(hotels: list, msg_idx: int):
-    """Display hotel list"""
+    """Display hotel list with unified budget"""
     if display_hotel_list_v2:
-        display_hotel_list_v2(hotels)
+        # ✅ 传递预算信息和预订回调
+        display_hotel_list_v2(
+            hotels,
+            message_id=msg_idx,
+            on_book_callback=lambda hotel, price: handle_booking("hotel", hotel, price)
+        )
     else:
         _display_hotels_fallback(hotels, msg_idx)
 
@@ -516,8 +533,13 @@ def display_hotels(hotels: list, msg_idx: int):
 def _display_hotels_fallback(hotels: list, msg_idx: int):
     """Hotel fallback display"""
     st.subheader("🏨 Recommended Hotels")
+
+    remaining = get_remaining_budget()
+    st.info(f"💰 剩余预算: ¥{remaining:,.0f}")
+
     for idx, hotel in enumerate(hotels):
-        with st.expander(f"⭐ {hotel.get('name', 'Unknown')} - ¥{hotel.get('price', 0)}/night", expanded=idx == 0):
+        price = hotel.get('price', 0)
+        with st.expander(f"⭐ {hotel.get('name', 'Unknown')} - ¥{price}/night", expanded=idx == 0):
             col1, col2 = st.columns([2, 1])
             with col1:
                 st.write(f"**Location:** {hotel.get('location', 'N/A')}")
@@ -525,15 +547,21 @@ def _display_hotels_fallback(hotels: list, msg_idx: int):
                 st.write(f"**Rating:** {'⭐' * int(hotel.get('rating', 0))}")
                 st.write(f"**Amenities:** {', '.join(hotel.get('amenities', []))}")
             with col2:
-                st.metric("Price", f"¥{hotel.get('price', 0)}/night")
-                if st.button(f"Book", key=f"book_hotel_{msg_idx}_{idx}"):
-                    add_to_orders("hotel", hotel)
+                st.metric("Price", f"¥{price}/night")
+
+                # ✅ 检查预算
+                if price > remaining:
+                    st.error("💰 预算不足")
+                else:
+                    if st.button(f"Book", key=f"book_hotel_{msg_idx}_{idx}"):
+                        handle_booking("hotel", hotel, price)
 
 
 def display_flights(flights: list, msg_idx: int):
-    """Display flight list"""
+    """Display flight list with unified budget"""
     if display_flight_list_v2:
-        display_flight_list_v2(flights)
+        # ✅ 传递消息ID
+        display_flight_list_v2(flights, message_id=msg_idx)
     else:
         _display_flights_fallback(flights, msg_idx)
 
@@ -541,9 +569,14 @@ def display_flights(flights: list, msg_idx: int):
 def _display_flights_fallback(flights: list, msg_idx: int):
     """Flight fallback display"""
     st.subheader("✈️ Recommended Flights")
+
+    remaining = get_remaining_budget()
+    st.info(f"💰 剩余预算: ¥{remaining:,.0f}")
+
     for idx, flight in enumerate(flights):
+        price = flight.get('price', 0)
         with st.expander(
-            f"{flight.get('carrier_name', 'Unknown')} {flight.get('flight_number', '')} - ¥{flight.get('price', 0)}",
+            f"{flight.get('carrier_name', 'Unknown')} {flight.get('flight_number', '')} - ¥{price}",
             expanded=idx == 0
         ):
             col1, col2, col3 = st.columns(3)
@@ -557,8 +590,12 @@ def _display_flights_fallback(flights: list, msg_idx: int):
                 st.write(f"**Duration:** {flight.get('duration', 'N/A')}")
                 st.write(f"**Class:** {flight.get('cabin_class', 'N/A')}")
 
-            if st.button(f"Book", key=f"book_flight_{msg_idx}_{idx}"):
-                add_to_orders("flight", flight)
+            # ✅ 检查预算
+            if price > remaining:
+                st.error("💰 预算不足")
+            else:
+                if st.button(f"Book", key=f"book_flight_{msg_idx}_{idx}"):
+                    handle_booking("flight", flight, price)
 
 
 def display_weather(weather: dict):
@@ -610,53 +647,83 @@ def display_suggestions(suggestions: list, msg_idx: int = 0):
     cols = st.columns(min(len(suggestions[:3]), 3))
     for idx, (col, suggestion) in enumerate(zip(cols, suggestions[:3])):
         with col:
-            # ✅ 使用唯一且稳定的key
             button_key = f"sug_{msg_idx}_{idx}_{suggestion[:20]}"
             if st.button(f"{suggestion}", key=button_key):
-                # ✅ 使用 session_state 传递消息，避免直接调用导致卡顿
                 st.session_state.pending_message = suggestion
 
 
-def add_to_orders(order_type: str, item: dict):
-    """Add to orders"""
+# ✅ 统一的预订处理函数
+def handle_booking(order_type: str, item: dict, price: float):
+    """
+    统一的预订处理函数 - 检查预算并扣除
+
+    Args:
+        order_type: 订单类型 (hotel/flight)
+        item: 订单项目数据
+        price: 价格
+    """
+    remaining = get_remaining_budget()
+
+    # 检查预算是否足够
+    if price > remaining:
+        st.error(f"❌ 预算不足! 需要 ¥{price:,.0f}, 剩余 ¥{remaining:,.0f}")
+        return False
+
+    # 添加订单
     order = {
         "type": order_type,
         "item": item,
+        "price": price,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     st.session_state.orders.append(order)
-    st.success(f"Added to orders! Total {len(st.session_state.orders)} orders")
+
+    # ✅ 扣除预算
+    st.session_state.total_spent += price
+    new_remaining = get_remaining_budget()
+
+    # ✅ 显示成功消息和弹窗
+    success_msg = f"""
+    ✅ **预订成功!**
+    
+    - 类型: {'🏨 酒店' if order_type == 'hotel' else '✈️ 航班'}
+    - 项目: {item.get('name', item.get('carrier_name', 'Unknown'))}
+    - 扣除金额: ¥{price:,.0f}
+    - 剩余预算: ¥{new_remaining:,.0f}
+    """
+
+    st.success(success_msg)
     st.balloons()
 
+    # 预算警告
+    if new_remaining < 0:
+        st.error(f"⚠️ 预算超支 ¥{abs(new_remaining):,.0f}!")
+    elif new_remaining < 500:
+        st.warning(f"⚠️ 预算即将用完,剩余 ¥{new_remaining:,.0f}")
 
-# ==================== Main Function - 优化版（减少卡顿） ====================
+    return True
+
+
+# ==================== Main Function ====================
 def handle_user_input(message: str):
-    """Handle user input - 优化版本，减少不必要的 rerun"""
+    """Handle user input"""
     if not message.strip():
         return
 
-    # ✅ 检查是否正在处理，避免重复处理
     if st.session_state.processing:
         return
 
-    # ✅ 标记为处理中
     st.session_state.processing = True
 
     try:
-        # 添加用户消息
         save_message_to_conversation("user", message)
 
-        # 创建占位符用于显示处理状态
         status_placeholder = st.empty()
         status_placeholder.info("🤔 AI is thinking, please wait...")
 
-        # 调用后端API
         response = call_backend_api(message)
-
-        # 清除状态提示
         status_placeholder.empty()
 
-        # 添加AI响应
         save_message_to_conversation(
             "assistant",
             response.get("content", ""),
@@ -666,9 +733,7 @@ def handle_user_input(message: str):
         )
 
     finally:
-        # ✅ 重置处理状态
         st.session_state.processing = False
-        # ✅ 只在最后 rerun 一次
         st.rerun()
 
 
@@ -676,7 +741,6 @@ def handle_user_input(message: str):
 with st.sidebar:
     st.header("💬 Conversation Management")
 
-    # New conversation button
     col1, col2 = st.columns([3, 1])
     with col1:
         if st.button("➕ New Conversation", use_container_width=True, type="primary", key="new_conv_btn"):
@@ -684,28 +748,76 @@ with st.sidebar:
             st.rerun()
 
     with col2:
-        # Refresh button
-        if st.button("🔄", use_container_width=True, help="Refresh conversation list", key="refresh_btn"):
+        if st.button("🔄", use_container_width=True, help="Refresh", key="refresh_btn"):
             st.rerun()
+
+    st.divider()
+
+    # ✅ 实时预算显示 - 放在最显眼的位置
+    st.markdown("### 💰 预算管理")
+
+    current_conv = get_current_conversation()
+    if current_conv:
+        total_budget = current_conv["preferences"].get("budget", 5000)
+        remaining = get_remaining_budget()
+        usage_percent = (st.session_state.total_spent / total_budget * 100) if total_budget > 0 else 0
+
+        # 预算进度条
+        st.progress(min(usage_percent / 100, 1.0))
+
+        # 预算指标
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            st.metric(
+                "总预算",
+                f"¥{total_budget:,.0f}",
+                delta=None
+            )
+        with col_b2:
+            st.metric(
+                "剩余",
+                f"¥{remaining:,.0f}",
+                delta=f"-¥{st.session_state.total_spent:,.0f}" if st.session_state.total_spent > 0 else None,
+                delta_color="inverse"
+            )
+
+        # 预算状态提示
+        if remaining < 0:
+            st.markdown(f"""
+            <div class="budget-danger">
+                ⚠️ 预算超支 ¥{abs(remaining):,.0f}
+            </div>
+            """, unsafe_allow_html=True)
+        elif remaining < total_budget * 0.2:
+            st.markdown(f"""
+            <div class="budget-warning">
+                ⚠️ 预算即将用完 ({usage_percent:.1f}% 已使用)
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="budget-ok">
+                ✅ 预算充足 ({usage_percent:.1f}% 已使用)
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.caption(f"已花费: ¥{st.session_state.total_spent:,.0f} | 订单数: {len(st.session_state.orders)}")
 
     st.divider()
 
     # Conversation list
     st.markdown("#### 📋 Conversation List")
 
-    # Sort conversations by update time
     sorted_convs = sorted(
         st.session_state.conversations.items(),
         key=lambda x: x[1]["updated_at"],
         reverse=True
     )
 
-    # Display conversation list
     for conv_id, conv in sorted_convs:
         is_active = conv_id == st.session_state.current_conversation_id
         msg_count = len(conv["messages"])
 
-        # Use expander to display each conversation
         with st.expander(
             f"{'🟢' if is_active else '⚪'} {conv['name']} ({msg_count} msgs)",
             expanded=is_active
@@ -733,7 +845,6 @@ with st.sidebar:
                             st.success("✅ Deleted")
                             st.rerun()
 
-            # Rename input box
             if st.session_state.get(f"renaming_{conv_id}", False):
                 new_name = st.text_input(
                     "New Name",
@@ -765,7 +876,6 @@ with st.sidebar:
             "Destination",
             value=preferences.get("destination", ""),
             placeholder="e.g.: Chengdu, Hangzhou, Tokyo",
-            help="Enter the city or region you want to visit",
             key="sidebar_destination"
         )
         preferences["destination"] = destination
@@ -778,7 +888,6 @@ with st.sidebar:
                 max_value=30,
                 value=max(1, preferences.get("days", 3)),
                 step=1,
-                help="Trip duration (1-30 days)",
                 key="sidebar_days"
             )
             preferences["days"] = days
@@ -790,7 +899,6 @@ with st.sidebar:
                 max_value=100000,
                 value=max(500, int(preferences.get("budget", 5000))),
                 step=500,
-                help="Total budget amount",
                 key="sidebar_budget"
             )
             preferences["budget"] = budget
@@ -801,7 +909,6 @@ with st.sidebar:
                 "Start Date",
                 value=preferences.get("start_date", datetime.now().date()),
                 min_value=datetime.now().date(),
-                help="Trip start date",
                 key="sidebar_start_date"
             )
             preferences["start_date"] = start_date
@@ -812,12 +919,10 @@ with st.sidebar:
                 "End Date",
                 value=default_end,
                 min_value=start_date,
-                help="Trip end date",
                 key="sidebar_end_date"
             )
             preferences["end_date"] = end_date
 
-        # Save to current_trip for compatibility
         st.session_state.current_trip = preferences
 
     st.divider()
@@ -831,7 +936,7 @@ with st.sidebar:
             if current_conv:
                 current_conv["messages"] = []
                 st.session_state.messages = []
-                st.success("Conversation cleared")
+                st.success("Cleared")
                 st.rerun()
 
     with col2:
@@ -846,12 +951,13 @@ with st.sidebar:
             for idx, order in enumerate(st.session_state.orders, 1):
                 item = order['item']
                 order_type = order['type']
-                name = item.get('name', 'Unknown')
-                price = item.get('price', 0) if order_type == 'hotel' else item.get('total_price', 0)
+                name = item.get('name', item.get('carrier_name', 'Unknown'))
+                price = order.get('price', 0)
 
                 st.write(f"**{idx}. {name}**")
-                st.caption(f"Type: {order_type} | Price: ¥{price}")
+                st.caption(f"Type: {order_type} | Price: ¥{price:,.0f}")
                 if st.button("Delete", key=f"del_order_{idx}"):
+                    st.session_state.total_spent -= price
                     st.session_state.orders.pop(idx-1)
                     st.rerun()
                 if idx < len(st.session_state.orders):
@@ -868,6 +974,7 @@ with st.sidebar:
         - Messages: {len(current_conv['messages'])}
         - Destination: {current_conv['preferences'].get('destination') or 'Not set'}
         - Budget: ¥{current_conv['preferences'].get('budget', 0):,}
+        - Spent: ¥{st.session_state.total_spent:,}
         - Days: {current_conv['preferences'].get('days', 0)}
         """)
 
@@ -886,13 +993,23 @@ with st.sidebar:
 
 
 # ==================== Main Interface ====================
-st.title("💬 TripPilot Intelligent Travel Assistant")
+st.title("✈️ TripPilot Intelligent Travel Assistant")
 st.caption("Based on DeepSeek AI | Make Travel Planning Simple and Fun")
 
-# Display current conversation name
+# Display budget at top
 current_conv = get_current_conversation()
 if current_conv:
-    st.info(f"📝 Current: **{current_conv['name']}** | {len(current_conv['messages'])} messages")
+    total_budget = current_conv["preferences"].get("budget", 5000)
+    remaining = get_remaining_budget()
+
+    col_top1, col_top2, col_top3 = st.columns([2, 1, 1])
+    with col_top1:
+        st.info(f"📝 Current: **{current_conv['name']}** | {len(current_conv['messages'])} messages")
+    with col_top2:
+        st.metric("💰 Total Budget", f"¥{total_budget:,.0f}")
+    with col_top3:
+        delta_color = "normal" if remaining >= 0 else "inverse"
+        st.metric("Remaining", f"¥{remaining:,.0f}", delta_color=delta_color)
 
 if not st.session_state.messages:
     st.markdown("""
@@ -943,13 +1060,12 @@ if not st.session_state.messages:
     cols = st.columns(2)
     for idx, query in enumerate(example_queries):
         with cols[idx % 2]:
-            # ✅ 使用稳定的key
             if st.button(f"{query}", key=f"example_query_{idx}", use_container_width=True):
                 st.session_state.pending_message = query
 
     st.divider()
 
-    st.info("**Tip**: You can directly tell me your travel needs in the input box below, such as destination, budget, days, etc. I will create an exclusive plan for you!")
+    st.info("**Tip**: You can directly tell me your travel needs in the input box below!")
 
 # Display message history
 message_container = st.container()
@@ -960,10 +1076,10 @@ with message_container:
         else:
             display_ai_message(message, msg_idx)
 
-# ✅ 处理待发送的消息（来自建议按钮或示例查询）
+# Handle pending message
 if "pending_message" in st.session_state and st.session_state.pending_message:
     pending_msg = st.session_state.pending_message
-    st.session_state.pending_message = None  # 清除待发送消息
+    st.session_state.pending_message = None
     handle_user_input(pending_msg)
 
 # Input box
@@ -981,7 +1097,7 @@ with st.container():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.caption("TripPilot v2.0 - Your Intelligent Travel Partner")
+        st.caption("✈️ TripPilot v2.1 - Your Intelligent Travel Partner")
 
     with col2:
         if st.session_state.messages:
@@ -989,4 +1105,4 @@ with st.container():
             st.caption(f"Last updated: {last_msg_time}")
 
     with col3:
-        st.caption("💡 Tip: Manage multiple conversations in the sidebar")
+        st.caption("💡 Tip: Unified budget management across all bookings")
